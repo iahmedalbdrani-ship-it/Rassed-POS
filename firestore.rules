@@ -1,0 +1,179 @@
+// ============================================================
+// Control Panel (رصيد) — Firestore Security Rules v2
+// ============================================================
+//
+// ARCHITECTURE:
+//   ALL financial writes (invoices, credit notes) go through the
+//   Firebase Cloud Function `createInvoice` which uses Admin SDK
+//   and bypasses these rules intentionally.
+//   Client-side code can only READ invoices — never write directly.
+//
+// Collections:
+//   /user_profiles/{uid}       — Personal profile per Firebase user
+//   /organizations/{orgId}     — Company / tenant data
+//   /invoices/{invoiceId}      — Tax invoices (ZATCA compliant)
+//   /credit_notes/{noteId}     — Credit notes (cancellations only)
+//   /invoice_counter/{orgId}   — ICV counter (server-only, hidden)
+// ============================================================
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── HELPER FUNCTIONS ─────────────────────────────────
+
+    /** Is the request from an authenticated Firebase user? */
+    function isAuthenticated() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    /** Is the requesting user the document owner (uid match)? */
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    /**
+     * Load the caller's user profile from Firestore.
+     * Firebase caches this read within the same rules evaluation.
+     */
+    function myProfile() {
+      return get(/databases/$(database)/documents/user_profiles/$(request.auth.uid)).data;
+    }
+
+    /** Does the user belong to the given organisation? */
+    function isMemberOf(orgId) {
+      return isAuthenticated() && myProfile().org_id == orgId;
+    }
+
+    /** Is the user an owner or admin of the org? */
+    function isAdminOf(orgId) {
+      return isMemberOf(orgId) &&
+             myProfile().role in ['owner', 'admin'];
+    }
+
+    /** Is the user at least an accountant (can read financial data)? */
+    function isAccountantOrAbove(orgId) {
+      return isMemberOf(orgId) &&
+             myProfile().role in ['owner', 'admin', 'accountant'];
+    }
+
+    /**
+     * Immutability guard: ensures no protected field is changed in update.
+     * Usage: didNotChange(['vat_number', 'created_at'])
+     */
+    function didNotChange(fields) {
+      return !request.resource.data.diff(resource.data)
+               .affectedKeys()
+               .hasAny(fields);
+    }
+
+    // ── USER PROFILES (/user_profiles/{uid}) ────────────
+
+    match /user_profiles/{uid} {
+      // Users can only see their own profile
+      allow get:    if isOwner(uid);
+      allow list:   if false;  // never enumerate all profiles
+
+      // Self-registration on first sign-in
+      allow create: if isOwner(uid)
+                    && request.resource.data.keys().hasAll(['email', 'org_id', 'role'])
+                    && request.resource.data.role in ['owner', 'admin', 'accountant', 'viewer'];
+
+      // Users can update personal fields but CANNOT elevate their own role
+      // or move themselves to a different organisation
+      allow update: if isOwner(uid)
+                    && didNotChange(['org_id', 'role', 'created_at']);
+
+      // Profiles are never deleted via client (use Firebase Console for that)
+      allow delete: if false;
+    }
+
+    // ── ORGANISATIONS (/organizations/{orgId}) ───────────
+
+    match /organizations/{orgId} {
+      // Any member can read their own org document
+      allow get:  if isMemberOf(orgId);
+      allow list: if false;
+
+      // Org is created server-side when a user registers — client-only
+      // when the owner creates their account for the first time
+      allow create: if isAuthenticated()
+                    && request.auth.uid == request.resource.data.owner_uid
+                    && request.resource.data.keys().hasAll(['name_ar', 'vat_number', 'owner_uid']);
+
+      // Only admins can update, and can never change the VAT number
+      // (vat_number is permanently immutable — ZATCA compliance)
+      allow update: if isAdminOf(orgId)
+                    && didNotChange(['vat_number', 'cr_number', 'created_at', 'owner_uid']);
+
+      allow delete: if false;
+    }
+
+    // ── INVOICES (/invoices/{invoiceId}) ─────────────────
+    //
+    // SECURITY DESIGN — READ-ONLY FROM THE CLIENT:
+    //   The invoice document stores `org_id` and `created_by_uid`.
+    //   Reads are allowed for org members.
+    //   All writes are performed by the Cloud Function (Admin SDK)
+    //   which bypasses these rules — preventing:
+    //     • forged invoice amounts
+    //     • bypassed ICV counters
+    //     • unsigned / tampered ZATCA XML
+    //     • broken invoice chains
+
+    match /invoices/{invoiceId} {
+      // Single document fetch (e.g. preview modal)
+      allow get: if isAuthenticated()
+                 && isMemberOf(resource.data.org_id);
+
+      // Collection query — client MUST filter by org_id
+      // e.g. where('org_id', '==', userOrgId)
+      allow list: if isAuthenticated()
+                  && isAccountantOrAbove(
+                       request.query.filters != null
+                         ? request.query.filters[0].value
+                         : ''
+                     );
+
+      // ── CLIENT WRITES ARE PERMANENTLY BLOCKED ──────────
+      allow create: if false;  // Cloud Function only
+      allow update: if false;  // Cloud Function only (e.g. ZATCA status update)
+      allow delete: if false;  // PERMANENTLY BLOCKED — ZATCA anti-tampering
+    }
+
+    // ── CREDIT NOTES (/credit_notes/{noteId}) ────────────
+    //
+    // Credit notes are the ONLY mechanism to reverse an invoice.
+    // Same write policy as invoices — server-side only.
+
+    match /credit_notes/{noteId} {
+      allow get:  if isAuthenticated() && isMemberOf(resource.data.org_id);
+      allow list: if isAuthenticated()
+                  && isAccountantOrAbove(
+                       request.query.filters != null
+                         ? request.query.filters[0].value
+                         : ''
+                     );
+      allow create: if false;  // Cloud Function only
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ── INVOICE COUNTER (/invoice_counter/{orgId}) ───────
+    // Stores the current ICV per org. Completely server-side.
+    // Clients cannot read or increment this — prevents counter skipping.
+
+    match /invoice_counter/{orgId} {
+      allow read:  if false;
+      allow write: if false;
+    }
+
+    // ── DENY-ALL FALLBACK ────────────────────────────────
+    // Any collection not listed above is fully locked.
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

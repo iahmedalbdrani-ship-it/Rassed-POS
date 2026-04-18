@@ -1,0 +1,85 @@
+# dataconnect/schema/schema.gql
+
+type User @table {
+  # التعديل هنا: استخدام uuidV4() بدلاً من uuid_generate_v4()
+  id: UUID! @default(expr: "uuidV4()") 
+  username: String!
+  role: String!
+  email: String @unique
+  fullName: String
+}
+
+type InventoryItem @table {
+  id: UUID! @default(expr: "uuidV4()")
+  itemName: String!
+  sku: String! @unique
+  costPrice: Float!
+  salePrice: Float!
+  vatRate: Float! @default(value: 0.15)
+  currentStock: Int!
+  description: String
+}
+
+type Transaction @table {
+  id: UUID! @default(expr: "uuidV4()")
+  transactionDate: Date! @default(expr: "request.time")
+  description: String!
+  amount: Float!
+  transactionType: String!
+  vatAmount: Float!
+  referenceNumber: String
+}
+# --- قسم الموردين ---
+type Supplier @table {
+  id: UUID! @default(expr: "uuidV4()")
+  name: String!
+  vatNumber: String
+  phone: String
+  email: String
+  address: String
+}
+
+# --- قسم المشتريات ---
+type Purchase @table {
+  id: UUID! @default(expr: "uuidV4()")
+  supplier: Supplier!
+  purchaseDate: Date! @default(expr: "request.time")
+  totalAmount: Float!
+  taxAmount: Float!
+  status: String!       # (تم الاستلام، مسودة، ملغي)
+}
+
+# --- قسم المصروفات ---
+type Expense @table {
+  id: UUID! @default(expr: "uuidV4()")
+  category: String!     # (إيجار، رواتب، فواتير كهرباء)
+  amount: Float!
+  date: Date! @default(expr: "request.time")
+  note: String
+}
+
+# --- قسم المرتجعات ---
+type Return @table {
+  id: UUID! @default(expr: "uuidV4()")
+  originalTransactionId: UUID!
+  reason: String
+  refundAmount: Float!
+  returnDate: Date! @default(expr: "request.time")
+}
+
+# --- جدول إعدادات الشركة (مستند واحد فقط) ---
+type CompanySettings @table {
+  id: UUID! @default(expr: "uuidV4()")
+  companyName: String!
+  vatNumber: String!
+  address: String
+  phone: String
+  email: String
+  website: String
+  logoUrl: String
+  stampUrl: String
+  vatRate: Float! @default(value: 0.15)
+  currency: String! @default(value: "ر.س")
+  instagram: String
+  snapchat: String
+}

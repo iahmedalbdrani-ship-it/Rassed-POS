@@ -1,0 +1,99 @@
+// 1. إعدادات المحرك وقاعدة البيانات
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 2. جدول الشركات (Tenants)
+// يمثل كل شركة مسجلة في النظام (مثل: مغسلة، بقالة، شركة مقاولات)
+model Tenant {
+  id              String         @id @default(uuid())
+  name            String         // اسم الشركة
+  vatNumber       String?        @unique // الرقم الضريبي
+  address         String?
+  createdAt       DateTime       @default(now())
+  
+  // العلاقات: الشركة الواحدة لها مستخدمون وحسابات وفواتير
+  users           User[]
+  accounts        Account[]
+  journalEntries  JournalEntry[]
+  invoices        Invoice[]
+}
+
+// 3. جدول المستخدمين (Users)
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  role      Role     @default(CASHIER) // ADMIN, ACCOUNTANT, CASHIER
+  
+  // الربط بالشركة (الإلزامي)
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+}
+
+// 4. جدول شجرة الحسابات (Chart of Accounts)
+model Account {
+  id        String      @id @default(uuid())
+  code      String      // رقم الحساب (مثلاً: 1101)
+  name      String      // اسم الحساب (مثلاً: الصندوق)
+  type      AccountType // النوع (ASSET, LIABILITY, etc.)
+  
+  // الربط بالشركة (العزل التام)
+  tenantId  String
+  tenant    Tenant      @relation(fields: [tenantId], references: [id])
+
+  // الحساب الواحد يمكن أن يظهر في عدة أسطر قيود
+  journalLines JournalLine[]
+
+  // لضمان عدم تكرار رقم الحساب لنفس الشركة
+  @@unique([code, tenantId])
+}
+
+// 5. جدول قيود اليومية (Journal Entries)
+model JournalEntry {
+  id          String   @id @default(uuid())
+  date        DateTime @default(now())
+  description String?
+  
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  
+  lines       JournalLine[]
+}
+
+// 6. تفاصيل القيود (Journal Lines) - القيد المزدوج
+model JournalLine {
+  id            String       @id @default(uuid())
+  debit         Decimal      @default(0) @db.Decimal(20, 2)
+  credit        Decimal      @default(0) @db.Decimal(20, 2)
+  
+  // الربط بالحساب والقيد
+  accountId     String
+  account       Account      @relation(fields: [accountId], references: [id])
+  
+  entryId       String
+  entry         JournalEntry @relation(fields: [entryId], references: [id])
+  
+  // حتى الأسطر نربطها بالشركة لزيادة الأمان عند الاستعلام
+  tenantId      String
+}
+
+// 7. القوائم المنسدلة (Enums)
+enum Role {
+  ADMIN
+  ACCOUNTANT
+  CASHIER
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}

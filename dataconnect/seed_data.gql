@@ -1,0 +1,102 @@
+mutation CreateDemoData @transaction @auth(level: USER, insecureReason: "This is a seed data operation and should only be run by authenticated users.") {
+  user_insertMany(data: [
+    {
+      id: "b45543d3-7313-4318-8f85-5b432a24d772",
+      username: "john.doe",
+      passwordHash: "hashedpassword1",
+      role: "admin",
+      email: "john.doe@example.com",
+      fullName: "John Doe"
+    },
+    {
+      id: "a7c2e9b0-9e1d-4f7f-8c0e-0a5d4e1b2f3c",
+      username: "jane.smith",
+      passwordHash: "hashedpassword2",
+      role: "employee",
+      email: "jane.smith@example.com",
+      fullName: "Jane Smith"
+    }
+  ])
+  account_insertMany(data: [
+    {
+      id: "e0a1b2c3-d4e5-6f7a-8b9c-0d1e2f3a4b5c",
+      accountName: "Main Checking",
+      accountType: "Checking",
+      accountNumber: "123456789",
+      description: "Primary checking account"
+    },
+    {
+      id: "f1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6d",
+      accountName: "Savings Account",
+      accountType: "Savings",
+      accountNumber: "987654321",
+      description: "Long-term savings"
+    }
+  ])
+  inventoryItem_insertMany(data: [
+    {
+      id: "10c9a8b7-6f5e-4d3c-2b1a-0f9e8d7c6b5a",
+      itemName: "Laptop",
+      unitPrice: 1200.00,
+      currentStock: 50,
+      createdAt: "2023-01-15T10:00:00Z",
+      description: "High-performance laptop",
+      sku: "LAP-HP-001"
+    },
+    {
+      id: "21d0b9c8-7e6f-5d4c-3b2a-1g0f9e8d7c6b",
+      itemName: "Mouse",
+      unitPrice: 25.00,
+      currentStock: 200,
+      createdAt: "2023-01-20T11:30:00Z",
+      description: "Wireless optical mouse",
+      sku: "ACC-MOU-001"
+    }
+  ])
+  transaction_insertMany(data: [
+    {
+      id: "32e1c0d9-8f7e-6d5c-4b3a-2g1h0f9e8d7c",
+      transactionDate: "2023-03-01",
+      description: "Paid salary",
+      amount: 2500.00,
+      userId: "b45543d3-7313-4318-8f85-5b432a24d772",
+      debitAccountId: "e0a1b2c3-d4e5-6f7a-8b9c-0d1e2f3a4b5c",
+      creditAccountId: "e0a1b2c3-d4e5-6f7a-8b9c-0d1e2f3a4b5c",
+      referenceNumber: "TRANS-001"
+    },
+    {
+      id: "43f2d1e0-9a8b-7c6d-5e4f-3h2g1j0i9h8g",
+      transactionDate: "2023-03-05",
+      description: "Purchased office supplies",
+      amount: 150.75,
+      userId: "a7c2e9b0-9e1d-4f7f-8c0e-0a5d4e1b2f3c",
+      debitAccountId: "e0a1b2c3-d4e5-6f7a-8b9c-0d1e2f3a4b5c",
+      creditAccountId: "e0a1b2c3-d4e5-6f7a-8b9c-0d1e2f3a4b5c",
+      referenceNumber: "TRANS-002"
+    }
+  ])
+  payrollEntry_insertMany(data: [
+    {
+      id: "54a3b2c1-0d9e-8f7a-6b5c-4d3e2f1a0b9c",
+      payPeriodStartDate: "2023-02-15",
+      payPeriodEndDate: "2023-02-28",
+      grossPay: 3000.00,
+      netPay: 2500.00,
+      employeeId: "b45543d3-7313-4318-8f85-5b432a24d772",
+      deductions: 500.00,
+      bonuses: 100.00,
+      hoursWorked: 160.0
+    },
+    {
+      id: "65b4c3d2-1e0f-9a8b-7c6d-5e4f3a2b1c0d",
+      payPeriodStartDate: "2023-02-15",
+      payPeriodEndDate: "2023-02-28",
+      grossPay: 2800.00,
+      netPay: 2300.00,
+      employeeId: "a7c2e9b0-9e1d-4f7f-8c0e-0a5d4e1b2f3c",
+      deductions: 500.00,
+      bonuses: 0.00,
+      hoursWorked: 160.0
+    }
+  ])
+}
