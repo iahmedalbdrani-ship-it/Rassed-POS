@@ -1,0 +1,50 @@
+# dataconnect/example/queries.gql
+
+# 1. استعلام جلب المنتجات (يبقى كما هو)
+query ListProducts @auth(level: PUBLIC) {
+  inventoryItems {
+    id
+    itemName
+    sku
+    salePrice
+    currentStock
+  }
+}
+
+# 2. إضافة منتج جديد (تفكيك الحقول)
+mutation CreateProduct(
+  $itemName: String!, 
+  $sku: String!, 
+  $costPrice: Float!, 
+  $salePrice: Float!, 
+  $currentStock: Int!, 
+  $vatRate: Float!, 
+  $description: String
+) @auth(level: PUBLIC) {
+  inventoryItem_insert(data: {
+    itemName: $itemName,
+    sku: $sku,
+    costPrice: $costPrice,
+    salePrice: $salePrice,
+    currentStock: $currentStock,
+    vatRate: $vatRate,
+    description: $description
+  })
+}
+
+# 3. إضافة عملية مالية (تفكيك الحقول)
+mutation CreateTransaction(
+  $description: String!,
+  $amount: Float!,
+  $transactionType: String!,
+  $vatAmount: Float!,
+  $referenceNumber: String
+) @auth(level: PUBLIC) {
+  transaction_insert(data: {
+    description: $description,
+    amount: $amount,
+    transactionType: $transactionType,
+    vatAmount: $vatAmount,
+    referenceNumber: $referenceNumber
+  })
+}
