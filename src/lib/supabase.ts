@@ -6,11 +6,11 @@
 import { createClient, RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 
 // ─── Environment ────────────────────────────────────────────
-const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL  as string;
-const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON as string;
+const SUPABASE_URL  = (import.meta.env.VITE_SUPABASE_URL  as string) || 'http://placeholder-url.supabase.co';
+const SUPABASE_ANON = (import.meta.env.VITE_SUPABASE_ANON as string) || 'placeholder-anon-key';
 
-if (!SUPABASE_URL || !SUPABASE_ANON) {
-  throw new Error('[Supabase] Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON in .env');
+if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON) {
+  console.error('[Supabase] Warning: Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON in .env. Using placeholders, which will cause API failures.');
 }
 
 export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON, {
