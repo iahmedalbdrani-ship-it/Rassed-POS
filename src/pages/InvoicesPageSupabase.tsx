@@ -15,7 +15,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Search, FileText, RefreshCw, Eye, Undo2, CheckCircle,
   XCircle, AlertCircle, Clock, Calendar, Filter, Wifi, WifiOff,
-  Hash, Loader2, ReceiptText,
+  Hash, Loader2, ReceiptText, Send,
 } from 'lucide-react';
 
 import {
@@ -87,6 +87,7 @@ const InvoicesPageSupabase: React.FC = () => {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [refunding, setRefunding] = useState<string | null>(null);
+  const [submittingZatca, setSubmittingZatca] = useState<string | null>(null);
   const [toast,    setToast]    = useState<string | null>(null);
 
   const subRef = useRef<ReturnType<typeof invoicesService.subscribeChanges> | null>(null);
@@ -232,6 +233,37 @@ const InvoicesPageSupabase: React.FC = () => {
       setError(err.message ?? 'تعذّر إتمام المرتجع');
     } finally {
       setRefunding(null);
+    }
+  }, []);
+
+  // ── ZATCA Submission handler ─────────────────────────────
+  const handleSubmitZatca = useCallback(async (inv: Invoice) => {
+    setSubmittingZatca(inv.id);
+    try {
+      // 1. Get available ZATCA devices
+      const devices = await invoicesService.getZatcaDevices(inv.org_id);
+      if (!devices || devices.length === 0) {
+        throw new Error('لا يوجد أجهزة ZATCA جاهزة للإنتاج مرتبطة بهذه المنشأة');
+      }
+
+      // For simplicity, use the first available device
+      const deviceId = devices[0].id;
+
+      // 2. Submit to ZATCA
+      const result = await invoicesService.submitToZatca(inv.id, deviceId);
+
+      if (result.success) {
+        setToast(`✅ ${result.message}`);
+      } else {
+        throw new Error(result.message || 'فشل الإرسال إلى ZATCA');
+      }
+
+      setTimeout(() => setToast(null), 3500);
+    } catch (err: any) {
+      setError(err.message ?? 'تعذّر الإرسال إلى ZATCA');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setSubmittingZatca(null);
     }
   }, []);
 
@@ -492,6 +524,17 @@ const InvoicesPageSupabase: React.FC = () => {
                           <Eye size={14} />
                           معاينة
                         </button>
+                        {(inv.invoice_status === 'PENDING' || inv.invoice_status === 'REJECTED') && (
+                          <button
+                            onClick={() => handleSubmitZatca(inv)}
+                            disabled={submittingZatca === inv.id}
+                            style={actionBtn('#2563eb')}
+                            title="إرسال إلى ZATCA"
+                          >
+                            {submittingZatca === inv.id ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                            إرسال
+                          </button>
+                        )}
                         {inv.invoice_status !== 'REFUNDED' && inv.invoice_status !== 'CANCELLED' && (
                           <button
                             onClick={() => handleRefund(inv)}
