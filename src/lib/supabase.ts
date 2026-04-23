@@ -10,10 +10,10 @@ const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL  as string;
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON as string;
 
 if (!SUPABASE_URL || !SUPABASE_ANON) {
-  throw new Error('[Supabase] Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON in .env');
+  console.warn('[Supabase] Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON in .env. Application may not function correctly without these variables.');
 }
 
-export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON, {
+export const supabase: SupabaseClient = createClient(SUPABASE_URL || '', SUPABASE_ANON || '', {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
