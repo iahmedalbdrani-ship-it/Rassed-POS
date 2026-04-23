@@ -310,6 +310,30 @@ export const invoicesService = {
     if (error) throw new Error(`invoices.markRefunded: ${error.message}`);
     return data as Invoice;
   },
+
+  /**
+   * Submit an invoice to ZATCA Phase 2 via Supabase Edge Function.
+   */
+  async submitToZatca(invoiceId: string, deviceId: string) {
+    const { data, error } = await supabase.functions.invoke('zatca-submit', {
+      body: { invoice_id: invoiceId, device_id: deviceId },
+    });
+    if (error) throw new Error(`invoices.submitToZatca: ${error.message}`);
+    return data;
+  },
+
+  /**
+   * Get ZATCA devices for an organization.
+   */
+  async getZatcaDevices(orgId: string) {
+    const { data, error } = await supabase
+      .from('zatca_devices')
+      .select('*')
+      .eq('org_id', orgId)
+      .eq('status', 'production_ready');
+    if (error) throw new Error(`invoices.getZatcaDevices: ${error.message}`);
+    return data;
+  },
 };
 
 // ═══════════════════════════════════════════════════════════
