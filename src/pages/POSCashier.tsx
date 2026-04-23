@@ -35,13 +35,14 @@ import React, {
 import { useReactToPrint } from 'react-to-print';
 import { QRCodeSVG } from 'qrcode.react';
 import { v4 as uuidv4 } from 'uuid';
-import { productsService, settingsService, posSalesService, type StoreSettings } from '../lib/supabase-services';
+import { productsService, settingsService, posSalesService, partiesService, type StoreSettings, type Party } from '../lib/supabase-services';
 import InvoicePreviewModal, { type PreviewInvoice, type PreviewStore } from '../components/pos/InvoicePreviewModal';
 import {
   Search, ShoppingCart, Trash2, Plus, Minus, CreditCard,
   Banknote, Globe, X, CheckCircle2, ChevronRight,
   Package, Percent, AlertCircle, Zap,
-  Wifi, WifiOff, Hash, BookOpen,
+  Wifi, WifiOff, Hash, BookOpen, User, UserPlus,
+  Save, History, ArrowLeftRight,
 } from 'lucide-react';
 
 // ══════════════════════════════════════════════════════════════
@@ -970,6 +971,15 @@ const POSCashier: React.FC = () => {
   const [barcodeBuffer, setBarcodeBuffer] = useState('');
   const [savingCheckout, setSavingCheckout] = useState(false);
 
+  // ── Enhanced Features State ──
+  const [selectedCustomer, setSelectedCustomer] = useState<Party | null>(null);
+  const [showCustomerSearch, setShowCustomerSearch] = useState(false);
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+  const [customers, setCustomers] = useState<Party[]>([]);
+  const [globalDiscount, setGlobalDiscount] = useState(0);
+  const [heldCarts, setHeldCarts] = useState<{ id: string; cart: CartItem[]; customer: Party | null; date: string }[]>([]);
+  const [showHeldCarts, setShowHeldCarts] = useState(false);
+
   const searchRef = useRef<HTMLInputElement>(null);
   const barcodeRef = useRef<HTMLInputElement>(null);
   const receiptRef = useRef<HTMLDivElement>(null);
@@ -1029,7 +1039,20 @@ const POSCashier: React.FC = () => {
   }, []);
 
   // ── Derived ──
-  const totals = useMemo(() => calcTotals(cart), [cart]);
+  const totals = useMemo(() => {
+    const baseTotals = calcTotals(cart);
+    if (globalDiscount > 0) {
+      const discountAmount = baseTotals.subtotal_ex_vat * (globalDiscount / 100);
+      const newTotalVat = (baseTotals.subtotal_ex_vat - (baseTotals.total_discount + discountAmount)) * VAT_RATE;
+      return {
+        ...baseTotals,
+        total_discount: baseTotals.total_discount + discountAmount,
+        total_vat: Math.max(0, newTotalVat),
+        grand_total: Math.max(0, baseTotals.subtotal_ex_vat - (baseTotals.total_discount + discountAmount) + Math.max(0, newTotalVat)),
+      };
+    }
+    return baseTotals;
+  }, [cart, globalDiscount]);
 
   // Build dynamic CATEGORIES from actual product data
   const CATEGORIES = useMemo(() => {
@@ -1178,6 +1201,44 @@ const POSCashier: React.FC = () => {
 
   const clearCart = useCallback(() => setCart([]), []);
 
+  // ── Customer Search ──────────────────────────────────────
+  useEffect(() => {
+    if (customerSearchQuery.length > 1) {
+      partiesService.searchCustomers(customerSearchQuery)
+        .then(setCustomers)
+        .catch(console.error);
+    } else {
+      setCustomers([]);
+    }
+  }, [customerSearchQuery]);
+
+  // ── Held Carts ───────────────────────────────────────────
+  const holdCart = () => {
+    if (cart.length === 0) return;
+    const newHold = {
+      id: uuidv4(),
+      cart: [...cart],
+      customer: selectedCustomer,
+      date: new Date().toISOString(),
+    };
+    setHeldCarts(prev => [newHold, ...prev]);
+    clearCart();
+    setSelectedCustomer(null);
+    setGlobalDiscount(0);
+    showNotification('📥 تم تعليق السلة بنجاح');
+  };
+
+  const resumeCart = (held: typeof heldCarts[0]) => {
+    if (cart.length > 0) {
+      if (!confirm('هل تريد استبدال السلة الحالية بالسلة المعلقة؟')) return;
+    }
+    setCart(held.cart);
+    setSelectedCustomer(held.customer);
+    setHeldCarts(prev => prev.filter(h => h.id !== held.id));
+    setShowHeldCarts(false);
+    showNotification('📤 تم استعادة السلة');
+  };
+
   // ── Checkout ──────────────────────────────────────────────
   const handleCheckoutConfirm = async (payments: PaymentSplit[]) => {
     // Prevent double-submit
@@ -1262,6 +1323,7 @@ const POSCashier: React.FC = () => {
         payment_amount:  totalPaid,
         zatca_qr:        qrData,
         settings:        storeConfig as any,
+        party_id:        selectedCustomer?.id,
       });
     } catch (err: any) {
       // Non-fatal: sale is done locally; log the error
@@ -1275,6 +1337,8 @@ const POSCashier: React.FC = () => {
     setCompletedInvoice(invoice);
     setIsCheckoutOpen(false);
     clearCart();
+    setSelectedCustomer(null);
+    setGlobalDiscount(0);
   };
 
   const handleNewSale = () => {
@@ -1427,6 +1491,27 @@ const POSCashier: React.FC = () => {
 
         {/* Right — Cashier + Status */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <button
+            onClick={() => setShowHeldCarts(true)}
+            title="السلال المعلقة"
+            style={{
+              background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)',
+              borderRadius: '0.75rem', padding: '0.4rem 0.6rem',
+              cursor: 'pointer', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '0.3rem',
+            }}
+          >
+            <History size={14} />
+            <span style={{ fontSize: '0.7rem', fontWeight: 700 }}>المعلقة</span>
+            {heldCarts.length > 0 && (
+              <span style={{
+                background: '#f59e0b', color: '#fff', borderRadius: '999px',
+                padding: '0 5px', fontSize: '0.6rem', fontWeight: 800,
+              }}>
+                {heldCarts.length}
+              </span>
+            )}
+          </button>
+
           {/* Online/Offline indicator */}
           <div style={{
             display: 'flex', alignItems: 'center', gap: '0.3rem',
@@ -1587,6 +1672,91 @@ const POSCashier: React.FC = () => {
             </div>
           </div>
 
+          {/* Customer Selection Strip */}
+          <div style={{ ...glassCard, padding: '0.6rem 1rem', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{
+                width: '2rem', height: '2rem', borderRadius: '0.75rem',
+                background: selectedCustomer ? 'rgba(16,185,129,0.1)' : 'rgba(148,163,184,0.1)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: selectedCustomer ? '#10b981' : '#94a3b8'
+              }}>
+                <User size={16} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#0f172a' }}>
+                  {selectedCustomer ? selectedCustomer.name_ar : 'عميل نقدي'}
+                </div>
+                {selectedCustomer && (
+                  <div style={{ fontSize: '0.6rem', color: '#64748b' }}>
+                    {selectedCustomer.phone || 'بدون رقم هاتف'}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setShowCustomerSearch(!showCustomerSearch)}
+                style={{
+                  background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)',
+                  borderRadius: '0.75rem', padding: '0.4rem 0.75rem',
+                  cursor: 'pointer', color: '#3b82f6', fontSize: '0.7rem', fontWeight: 700,
+                  display: 'flex', alignItems: 'center', gap: '0.4rem'
+                }}
+              >
+                {selectedCustomer ? <ArrowLeftRight size={12} /> : <UserPlus size={12} />}
+                {selectedCustomer ? 'تغيير العميل' : 'اختيار عميل'}
+              </button>
+
+              {showCustomerSearch && (
+                <div style={{
+                  position: 'absolute', top: '100%', left: 0, marginTop: '0.5rem',
+                  width: '280px', background: '#fff', borderRadius: '1rem',
+                  boxShadow: '0 12px 32px rgba(0,0,0,0.15)', zIndex: 50,
+                  padding: '0.75rem', border: '1px solid rgba(0,0,0,0.08)'
+                }}>
+                  <input
+                    autoFocus
+                    placeholder="ابحث بالاسم أو الهاتف..."
+                    value={customerSearchQuery}
+                    onChange={(e) => setCustomerSearchQuery(e.target.value)}
+                    style={{
+                      width: '100%', padding: '0.5rem', borderRadius: '0.5rem',
+                      border: '1.5px solid rgba(0,0,0,0.08)', outline: 'none',
+                      fontSize: '0.8rem', marginBottom: '0.5rem'
+                    }}
+                  />
+                  <div style={{ maxHeight: '200px', overflowY: 'auto' }} className="custom-scroll">
+                    <div
+                      onClick={() => { setSelectedCustomer(null); setShowCustomerSearch(false); }}
+                      style={{ padding: '0.5rem', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.75rem', borderBottom: '1px solid #f1f5f9' }}
+                      className="hover:bg-slate-50"
+                    >
+                      👤 عميل نقدي (افتراضي)
+                    </div>
+                    {customers.map(c => (
+                      <div
+                        key={c.id}
+                        onClick={() => { setSelectedCustomer(c); setShowCustomerSearch(false); }}
+                        style={{ padding: '0.5rem', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.75rem' }}
+                        className="hover:bg-slate-50"
+                      >
+                        <div style={{ fontWeight: 700 }}>{c.name_ar}</div>
+                        <div style={{ fontSize: '0.65rem', color: '#64748b' }}>{c.phone}</div>
+                      </div>
+                    ))}
+                    {customerSearchQuery.length > 1 && customers.length === 0 && (
+                      <div style={{ padding: '1rem', textAlign: 'center', fontSize: '0.7rem', color: '#94a3b8' }}>
+                        لا يوجد نتائج
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Category Tabs */}
           <div style={{ ...glassCard, padding: '0.6rem', flexShrink: 0 }}>
             <div style={{
@@ -1720,6 +1890,19 @@ const POSCashier: React.FC = () => {
               </div>
             </div>
             {cart.length > 0 && (
+              <div style={{ display: 'flex', gap: '0.4rem' }}>
+              <button
+                onClick={holdCart}
+                title="تعليق السلة"
+                style={{
+                  background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)',
+                  borderRadius: '0.75rem', padding: '0.4rem 0.6rem',
+                  cursor: 'pointer', color: '#f59e0b',
+                  display: 'flex', alignItems: 'center',
+                }}
+              >
+                <Save size={14} />
+              </button>
               <button
                 onClick={clearCart}
                 style={{
@@ -1733,6 +1916,7 @@ const POSCashier: React.FC = () => {
                 <Trash2 size={12} />
                 مسح الكل
               </button>
+              </div>
             )}
           </div>
 
@@ -1878,6 +2062,25 @@ const POSCashier: React.FC = () => {
                 <span>المجموع (قبل الخصم والضريبة)</span>
                 <span>{fmt(totals.subtotal_ex_vat)}</span>
               </div>
+
+              {/* Global Discount Input */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', color: '#6366f1', fontWeight: 700 }}>
+                  <Percent size={12} /> خصم إجمالي (٪)
+                </div>
+                <input
+                  type="number"
+                  min="0" max="100"
+                  value={globalDiscount}
+                  onChange={(e) => setGlobalDiscount(Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
+                  style={{
+                    width: '3.5rem', padding: '0.2rem 0.5rem', borderRadius: '0.5rem',
+                    border: '1.5px solid rgba(99,102,241,0.2)', background: 'rgba(99,102,241,0.05)',
+                    textAlign: 'center', fontSize: '0.8rem', fontWeight: 800, color: '#6366f1', outline: 'none'
+                  }}
+                />
+              </div>
+
               {totals.total_discount > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#10b981' }}>
                   <span>إجمالي الخصومات</span>
@@ -2005,6 +2208,72 @@ const POSCashier: React.FC = () => {
           />
         );
       })()}
+
+      {/* ─── HELD CARTS DRAWER ─── */}
+      {showHeldCarts && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 800,
+          display: 'flex', justifyContent: 'flex-start',
+        }}>
+          <div onClick={() => setShowHeldCarts(false)} style={{ flex: 1, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)' }} />
+          <div style={{
+            width: '380px', background: '#fff',
+            height: '100%', overflowY: 'auto', padding: '1.5rem',
+            boxShadow: '-8px 0 40px rgba(0,0,0,0.15)',
+          }} className="custom-scroll">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h3 style={{ margin: 0, fontWeight: 900, color: '#0f172a' }}>السلال المعلقة</h3>
+              <button onClick={() => setShowHeldCarts(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                <X size={20} color="#64748b" />
+              </button>
+            </div>
+
+            {heldCarts.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
+                <History size={48} style={{ opacity: 0.2, marginBottom: '1rem' }} />
+                <div>لا توجد سلال معلقة</div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {heldCarts.map((held) => (
+                  <div key={held.id} style={{
+                    padding: '1rem', borderRadius: '1rem', border: '1.5px solid rgba(0,0,0,0.06)',
+                    background: 'rgba(248,250,252,0.5)'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 800, color: '#0f172a' }}>
+                        {held.customer ? held.customer.name_ar : 'عميل نقدي'}
+                      </span>
+                      <span style={{ fontSize: '0.65rem', color: '#94a3b8' }}>
+                        {new Date(held.date).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '1rem' }}>
+                      {held.cart.length} أصناف — {fmt(calcTotals(held.cart).grand_total)}
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button
+                        onClick={() => resumeCart(held)}
+                        style={{
+                          flex: 1, padding: '0.5rem', borderRadius: '0.75rem', background: '#f59e0b', color: '#fff',
+                          border: 'none', fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer'
+                        }}
+                      >استعادة</button>
+                      <button
+                        onClick={() => setHeldCarts(prev => prev.filter(h => h.id !== held.id))}
+                        style={{
+                          padding: '0.5rem', borderRadius: '0.75rem', background: 'rgba(239,68,68,0.1)', color: '#ef4444',
+                          border: 'none', cursor: 'pointer'
+                        }}
+                      ><Trash2 size={14} /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ─── LEDGER DRAWER ─── */}
       {showLedger && (

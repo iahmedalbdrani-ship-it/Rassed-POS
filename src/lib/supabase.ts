@@ -6,11 +6,11 @@
 import { createClient, RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 
 // ─── Environment ────────────────────────────────────────────
-const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL  as string;
-const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON as string;
+const SUPABASE_URL  = (import.meta.env.VITE_SUPABASE_URL  as string) || 'http://localhost:54321';
+const SUPABASE_ANON = (import.meta.env.VITE_SUPABASE_ANON as string) || 'placeholder';
 
-if (!SUPABASE_URL || !SUPABASE_ANON) {
-  throw new Error('[Supabase] Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON in .env');
+if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON) {
+  console.warn('[Supabase] Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON in .env. Using defaults for UI preview.');
 }
 
 export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON, {

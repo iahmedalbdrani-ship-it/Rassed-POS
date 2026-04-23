@@ -27,6 +27,19 @@ export interface ProductRow {
   updated_at?: string;
 }
 
+export interface Party {
+  id: string;
+  org_id: string;
+  type: 'CUSTOMER' | 'SUPPLIER' | 'BOTH';
+  name_ar: string;
+  name_en?: string;
+  vat_number?: string;
+  cr_number?: string;
+  email?: string;
+  phone?: string;
+  address?: any;
+}
+
 export interface StoreSettings {
   id?: string;
   org_id?: string;
@@ -250,6 +263,7 @@ export const posSalesService = {
     payment_amount: number;
     zatca_qr: string;
     settings: StoreSettings;
+    party_id?: string;
   }) {
     const now = new Date().toISOString();
 
@@ -259,6 +273,7 @@ export const posSalesService = {
       .insert({
         invoice_number: saleData.invoice_number,
         uuid: saleData.invoice_uuid,
+        party_id: saleData.party_id,
         invoice_type: 'SIMPLIFIED',
         invoice_status: 'CLEARED',
         issue_date: now.slice(0, 10),
@@ -303,5 +318,49 @@ export const posSalesService = {
     }
 
     return invoice;
+  },
+};
+
+// ═══════════════════════════════════════════════════════════
+// ── PARTIES SERVICE (Customers/Suppliers) ───────────────────
+// ═══════════════════════════════════════════════════════════
+export const partiesService = {
+
+  /** List all customers */
+  async listCustomers(): Promise<Party[]> {
+    const { data, error } = await supabase
+      .from('parties')
+      .select('*')
+      .in('type', ['CUSTOMER', 'BOTH'])
+      .order('name_ar', { ascending: true });
+
+    if (error) throw new Error(`parties.listCustomers: ${error.message}`);
+    return (data ?? []) as Party[];
+  },
+
+  /** Search customers by name or phone */
+  async searchCustomers(query: string): Promise<Party[]> {
+    const { data, error } = await supabase
+      .from('parties')
+      .select('*')
+      .in('type', ['CUSTOMER', 'BOTH'])
+      .or(`name_ar.ilike.%${query}%,phone.ilike.%${query}%,name_en.ilike.%${query}%`)
+      .order('name_ar', { ascending: true })
+      .limit(20);
+
+    if (error) throw new Error(`parties.searchCustomers: ${error.message}`);
+    return (data ?? []) as Party[];
+  },
+
+  /** Create a new customer */
+  async createCustomer(party: Omit<Party, 'id'>): Promise<Party> {
+    const { data, error } = await supabase
+      .from('parties')
+      .insert({ ...party, type: 'CUSTOMER' })
+      .select()
+      .single();
+
+    if (error) throw new Error(`parties.createCustomer: ${error.message}`);
+    return data as Party;
   },
 };
