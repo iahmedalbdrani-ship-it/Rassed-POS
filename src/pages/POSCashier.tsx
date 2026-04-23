@@ -974,9 +974,51 @@ const POSCashier: React.FC = () => {
   const barcodeRef = useRef<HTMLInputElement>(null);
   const receiptRef = useRef<HTMLDivElement>(null);
 
+  // ── Notification ──
+  const showNotification = useCallback((msg: string) => {
+    setNotification(msg);
+    setTimeout(() => setNotification(null), 2500);
+  }, []);
+
+  // ── Cart Operations ──
+  const addToCart = useCallback((product: Product) => {
+    setCart((prev) => {
+      const existing = prev.find((c) => c.id === product.id);
+      if (existing) {
+        if (existing.qty >= product.stock) {
+          showNotification('⚠️ لا يوجد مخزون كافٍ');
+          return prev;
+        }
+        return prev.map((c) =>
+          c.id === product.id
+            ? calcItemTotals({ ...c, qty: c.qty + 1 })
+            : c,
+        );
+      }
+      return [...prev, calcItemTotals({ ...product, qty: 1, discount_pct: 0 })];
+    });
+  }, [showNotification]);
+
+  const updateQty = useCallback((id: string, delta: number) => {
+    setCart((prev) =>
+      prev
+        .map((c) => {
+          if (c.id !== id) return c;
+          const newQty = c.qty + delta;
+          if (newQty <= 0) return null as unknown as CartItem;
+          const product = products.find((p) => p.id === id);
+          if (product && newQty > product.stock) {
+            showNotification('⚠️ لا يوجد مخزون كافٍ');
+            return c;
+          }
+          return calcItemTotals({ ...c, qty: newQty });
+        })
+        .filter(Boolean),
+    );
+  }, [products, showNotification]);
+
   // ── Fetch: Products from Supabase ──────────────────────────
   useEffect(() => {
-    setLoadingProducts(true);
     productsService.list()
       .then(data => {
         setProducts(data.map(p => ({
@@ -997,11 +1039,10 @@ const POSCashier: React.FC = () => {
       })
       .catch(err => showNotification(`⚠️ تعذّر جلب المنتجات: ${err.message}`))
       .finally(() => setLoadingProducts(false));
-  }, []);
+  }, [showNotification]);
 
   // ── Fetch: Store Settings from Supabase ───────────────────
   useEffect(() => {
-    setLoadingSettings(true);
     settingsService.get()
       .then((s: StoreSettings) => {
         const cfg: StoreConfig = {
@@ -1120,50 +1161,7 @@ const POSCashier: React.FC = () => {
       window.removeEventListener('keydown', onKeyDown);
       clearTimeout(timer);
     };
-  }, [barcodeBuffer, products]);
-
-  // ── Notification ──
-  const showNotification = (msg: string) => {
-    setNotification(msg);
-    setTimeout(() => setNotification(null), 2500);
-  };
-
-  // ── Cart Operations ──
-  const addToCart = useCallback((product: Product) => {
-    setCart((prev) => {
-      const existing = prev.find((c) => c.id === product.id);
-      if (existing) {
-        if (existing.qty >= product.stock) {
-          showNotification('⚠️ لا يوجد مخزون كافٍ');
-          return prev;
-        }
-        return prev.map((c) =>
-          c.id === product.id
-            ? calcItemTotals({ ...c, qty: c.qty + 1 })
-            : c,
-        );
-      }
-      return [...prev, calcItemTotals({ ...product, qty: 1, discount_pct: 0 })];
-    });
-  }, []);
-
-  const updateQty = useCallback((id: string, delta: number) => {
-    setCart((prev) =>
-      prev
-        .map((c) => {
-          if (c.id !== id) return c;
-          const newQty = c.qty + delta;
-          if (newQty <= 0) return null as unknown as CartItem;
-          const product = products.find((p) => p.id === id);
-          if (product && newQty > product.stock) {
-            showNotification('⚠️ لا يوجد مخزون كافٍ');
-            return c;
-          }
-          return calcItemTotals({ ...c, qty: newQty });
-        })
-        .filter(Boolean),
-    );
-  }, [products]);
+  }, [barcodeBuffer, products, addToCart, showNotification]);
 
   const updateDiscount = useCallback((id: string, discount_pct: number) => {
     const pct = Math.max(0, Math.min(100, discount_pct));

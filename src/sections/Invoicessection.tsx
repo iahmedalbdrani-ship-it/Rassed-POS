@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, FileText, Eye, Download, QrCode, Calendar, DollarSign } from 'lucide-react';
+import { Plus, FileText, Download, QrCode } from 'lucide-react';
 
 interface Invoice {
   id: string;
@@ -19,7 +19,7 @@ const STATUS_COLORS = {
 };
 
 export default function InvoicesSection() {
-  const [invoices, setInvoices] = useState<Invoice[]>([
+  const [invoices] = useState<Invoice[]>([
     {
       id: '1',
       number: 'INV-2024-001',

@@ -82,7 +82,6 @@ export default function ExpensesSection() {
   };
 
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
-  const categoryTotals = EXPENSE_CATEGORIES as any;
 
   return (
     <div className="max-w-6xl mx-auto">

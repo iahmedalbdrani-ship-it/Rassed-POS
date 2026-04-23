@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, ArrowLeftCircle, Calendar, User, DollarSign, Trash2 } from 'lucide-react';
+import { Plus, ArrowLeftCircle, Trash2 } from 'lucide-react';
 
 interface Return {
   id: string;

@@ -75,10 +75,14 @@ function LogoUploadZone({ currentUrl, onUploadSuccess, onError }: LogoUploadZone
   const inputRef             = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [preview,   setPreview]   = useState<string | null>(currentUrl ?? null);
+  const [prevUrl,   setPrevUrl]   = useState<string | null>(currentUrl ?? null);
   const [dragOver,  setDragOver]  = useState(false);
 
   // Sync preview when parent loads logo_url from DB
-  useEffect(() => { if (currentUrl) setPreview(currentUrl); }, [currentUrl]);
+  if (currentUrl !== prevUrl) {
+    setPrevUrl(currentUrl ?? null);
+    setPreview(currentUrl ?? null);
+  }
 
   const processFile = async (file: File) => {
     // ── Validation ────────────────────────────────────────────

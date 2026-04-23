@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Package, Calendar, User, DollarSign } from 'lucide-react';
+import { Plus, Package, Calendar } from 'lucide-react';
 
 interface Purchase {
   id: string;
@@ -20,7 +20,7 @@ const STATUS_COLORS = {
 };
 
 export default function PurchasesSection() {
-  const [purchases, setPurchases] = useState<Purchase[]>([
+  const [purchases] = useState<Purchase[]>([
     {
       id: '1',
       supplierName: 'شركة الخليج للتوزيع',
