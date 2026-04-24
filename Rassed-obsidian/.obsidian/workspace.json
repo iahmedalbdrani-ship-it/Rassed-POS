@@ -1,0 +1,267 @@
+{
+  "main": {
+    "id": "de6682c16e786862",
+    "type": "split",
+    "children": [
+      {
+        "id": "eef02de721892e56",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "b72f74d847651fdd",
+            "type": "leaf",
+            "state": {
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "العرض البياني"
+            }
+          },
+          {
+            "id": "88d88514612d8a02",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "06_Frontend_Components.md",
+                "mode": "preview",
+                "source": false,
+                "backlinks": true,
+                "backlinkOpts": {
+                  "collapseAll": false,
+                  "extraContext": false,
+                  "sortOrder": "alphabetical",
+                  "showSearch": false,
+                  "searchQuery": "",
+                  "backlinkCollapsed": false,
+                  "unlinkedCollapsed": true
+                }
+              },
+              "icon": "lucide-file",
+              "title": "06_Frontend_Components"
+            }
+          },
+          {
+            "id": "cc3929f4a160530f",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Raseed Overview.md",
+                "mode": "source",
+                "source": false,
+                "backlinks": true,
+                "backlinkOpts": {
+                  "collapseAll": false,
+                  "extraContext": false,
+                  "sortOrder": "alphabetical",
+                  "showSearch": false,
+                  "searchQuery": "",
+                  "backlinkCollapsed": false,
+                  "unlinkedCollapsed": true
+                }
+              },
+              "icon": "lucide-file",
+              "title": "Raseed Overview"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "488d616fd56e965a",
+    "type": "split",
+    "children": [
+      {
+        "id": "cbc4a74fdd91aae9",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "c83d87cbbd2330c9",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "byModifiedTime",
+                "autoReveal": true
+              },
+              "icon": "lucide-folder-closed",
+              "title": "مستكشف الملفات"
+            }
+          },
+          {
+            "id": "6d6cf1f7c9bfa0e1",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "البحث"
+            }
+          },
+          {
+            "id": "7920ae2baa9148c0",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "الإشارات المرجعية"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "136576e2975cf0b6",
+    "type": "split",
+    "children": [
+      {
+        "id": "a6f7dbded96c396f",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "3415d01d15e496d6",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": false
+              },
+              "icon": "links-coming-in",
+              "title": "الروابط الخلفية"
+            }
+          },
+          {
+            "id": "e67b38ee31690118",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "07_User_Management_and_Security.md",
+                "linksCollapsed": true,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "الروابط الصادرة من 07_User_Management_and_Security"
+            }
+          },
+          {
+            "id": "035125fcdf81a2b7",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "وسوم"
+            }
+          },
+          {
+            "id": "495aceb746fe7037",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "جميع الخصائص"
+            }
+          },
+          {
+            "id": "0be9ef80c47d1beb",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "Rassed Project.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "المخطط التفصيلي لـ Rassed Project"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 200
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:إفتح الانتقال السريع": false,
+      "graph:إفتح العرض البياني": false,
+      "canvas:إنشاء لوحة بصرية جديدة": false,
+      "daily-notes:إفتح ملاحظة اليوم": false,
+      "templates:أدرج قالب": false,
+      "command-palette:إفتح لوحة الأوامر": false,
+      "bases:إنشاء قاعدة جديدة": false
+    }
+  },
+  "active": "b72f74d847651fdd",
+  "lastOpenFiles": [
+    "02_UI_Colors.md",
+    "06_Frontend_Components.md",
+    "[07_User_Management_and_Security.md",
+    "Raseed Overview.md",
+    "[04_API_Endpoints.md",
+    "01_Database_Schema.md",
+    "00_Raseed_Overview.md",
+    "[[04_API_Endpoints.md",
+    "10_Claude_Custom_Instructions.md",
+    "بدون عنوان.canvas",
+    "05_Financial_Reports.md",
+    "البنية التقنية والمنطق الأساسي.md",
+    "xxxx.md",
+    "07_User_Management_and_Security.md",
+    "بدون عنوان.md",
+    "07_User_Management_and_Security",
+    "overview.canvas",
+    "06_Frontend_Components",
+    "بدون عنوان 2.canvas",
+    "٢٠٢٦-٠٤-٢١.md",
+    "[[02_UI_Colors]].md",
+    "بدون عنوان 1.canvas",
+    "بدون عنوان 1.base",
+    "بدون عنوان.base",
+    "03_Typography.md",
+    "- 1.md",
+    "-.md",
+    "[-.md",
+    "- 5.md",
+    "- 4.md",
+    "- 3.md",
+    "- 2.md",
+    "[- 2.md",
+    "[- 1.md",
+    "بدون عنوان 2.base",
+    "بدون عنوان 3.base"
+  ]
+}

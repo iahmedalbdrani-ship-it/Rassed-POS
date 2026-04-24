@@ -22,35 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-# Environment Variables (لحماية مفاتيح Supabase والزكاة)
-.env
-.env.*
-!.env.example
-$gitignoreContent = @"
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
 
 # Environment Variables (حماية مفاتيح Supabase والزكاة)
 .env
@@ -60,7 +31,6 @@ dist-ssr
 # Firebase & Auth
 src/lib/firebaseAuth.ts
 src/config/secrets.ts
-src/config/firebase.ts
 
 # OS Files
 Thumbs.db
@@ -78,6 +48,3 @@ Thumbs.db
 *.key
 *.pem
 *.cert
-"@ | Set-Content .gitignore
-
-Write-Host "✅ تم تحديث .gitignore" -ForegroundColor Green

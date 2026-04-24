@@ -9,6 +9,7 @@ import {
   signInWithEmail,
   signOutUser,
   onAuthChange,
+  getGoogleRedirectResult,
   type User,
 } from '../lib/firebaseAuth';
 
@@ -62,6 +63,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ── Listen for Firebase auth state changes ─────────────────
   useEffect(() => {
+    // Check for pending Google redirect result (Electron flow)
+    getGoogleRedirectResult()
+      .then((fbUser) => { if (fbUser) setUser(mapFirebaseUser(fbUser)); })
+      .catch(() => { /* no pending redirect */ });
+
     const unsubscribe = onAuthChange((fbUser) => {
       if (fbUser) {
         setUser(mapFirebaseUser(fbUser));
@@ -92,6 +98,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const fbUser = await signInWithGoogle();
       setUser(mapFirebaseUser(fbUser));
+    } catch (err: any) {
+      if (err?.message === 'REDIRECT_PENDING') {
+        // Electron redirect flow: app will reload after auth.
+        // Keep loading=true while waiting for redirect to complete.
+        return;
+      }
+      throw err;
     } finally {
       setLoading(false);
     }

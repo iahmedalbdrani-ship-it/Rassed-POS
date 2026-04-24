@@ -3,39 +3,30 @@
 // Auth | Storage | FCM | Firestore
 // ============================================================
 
-import { initializeApp, type FirebaseApp, getApps } from 'firebase/app';
 import {
-  getAuth,
-  type Auth, // تم التعديل إلى type لمنع خطأ الشاشة البيضاء
   GoogleAuthProvider,
   signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
-  type User, // تم التعديل إلى type
+  type User,
   sendPasswordResetEmail,
 } from 'firebase/auth';
 import {
-  getStorage,
-  type FirebaseStorage, // تم التعديل إلى type
   ref,
   uploadBytesResumable,
   getDownloadURL,
   deleteObject,
   listAll,
-  type UploadTaskSnapshot, // تم التعديل إلى type
+  type UploadTaskSnapshot,
 } from 'firebase/storage';
 import {
-  getMessaging,
-  type Messaging, // تم التعديل إلى type
   getToken,
   onMessage,
-  type MessagePayload, // تم التعديل إلى type
+  type MessagePayload,
 } from 'firebase/messaging';
 import {
-  getFirestore,
-  type Firestore,
   doc,
   setDoc,
   getDoc,
@@ -43,31 +34,9 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 
-// ─── Firebase Config (رصيد Project) ─────────────────────────
-const firebaseConfig = {
-  apiKey:            'AIzaSyB0Sx-RlSmYs3N6mTN0_s_W1SkA7e6_qn0',
-  authDomain:        'rassed-a7010.firebaseapp.com',
-  projectId:         'rassed-a7010',
-  storageBucket:     'rassed-a7010.firebasestorage.app',
-  messagingSenderId: '36907138573',
-  appId:             '1:36907138573:web:dc11f5c134289bd7e25f44',
-  measurementId:     'G-MR3HBT3J58',
-};
-
-// ─── Initialize (singleton pattern) ─────────────────────────
-const app: FirebaseApp = getApps().length === 0
-  ? initializeApp(firebaseConfig)
-  : getApps()[0];
-
-export const auth:      Auth      = getAuth(app);
-export const storage:   FirebaseStorage  = getStorage(app);
-export const db:        Firestore        = getFirestore(app);
-
-// Messaging is only available in browser (not SSR)
-export let messaging: Messaging | null = null;
-if (typeof window !== 'undefined' && 'Notification' in window) {
-  messaging = getMessaging(app);
-}
+// ─── Centralized environment-aware instances ──────────────────
+export { app, auth, db, storage, messaging, VAPID_KEY } from '@/config/firebase';
+import { app, auth, db, storage, messaging, VAPID_KEY } from '@/config/firebase';
 
 // ─── Types ───────────────────────────────────────────────────
 export interface UserProfile {
@@ -314,7 +283,6 @@ export const storageService = {
 // ═══════════════════════════════════════════════════════════
 // ── FCM — PUSH NOTIFICATIONS ────────────────────────────────
 // ═══════════════════════════════════════════════════════════
-const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY as string;
 
 export const fcmService = {
 

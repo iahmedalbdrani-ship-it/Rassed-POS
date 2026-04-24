@@ -69,13 +69,20 @@ export const DEFAULT_SETTINGS: StoreSettings = {
 // ═══════════════════════════════════════════════════════════
 // ── PRODUCTS SERVICE ─────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════
+// ─── Guard ────────────────────────────────────────────────────
+function assertOrgId(orgId: string | undefined | null): asserts orgId is string {
+  if (!orgId?.trim()) throw new Error('[Service] org_id مطلوب — لم يتم تحميل بيانات المؤسسة بعد');
+}
+
 export const productsService = {
 
-  /** Fetch all active products */
-  async list(): Promise<ProductRow[]> {
+  /** Fetch all active products for the org */
+  async list(orgId: string): Promise<ProductRow[]> {
+    assertOrgId(orgId);
     const { data, error } = await supabase
       .from('products')
       .select('*')
+      .eq('org_id', orgId)
       .eq('is_active', true)
       .order('name', { ascending: true });
 
@@ -83,11 +90,13 @@ export const productsService = {
     return (data ?? []) as ProductRow[];
   },
 
-  /** Search products by name or barcode */
-  async search(query: string): Promise<ProductRow[]> {
+  /** Search products by name or barcode within the org */
+  async search(orgId: string, query: string): Promise<ProductRow[]> {
+    assertOrgId(orgId);
     const { data, error } = await supabase
       .from('products')
       .select('*')
+      .eq('org_id', orgId)
       .eq('is_active', true)
       .or(`name.ilike.%${query}%,barcode.ilike.%${query}%,name_en.ilike.%${query}%`)
       .order('name', { ascending: true })
@@ -97,11 +106,13 @@ export const productsService = {
     return (data ?? []) as ProductRow[];
   },
 
-  /** Get single product by barcode */
-  async getByBarcode(barcode: string): Promise<ProductRow | null> {
+  /** Get single product by barcode within the org */
+  async getByBarcode(orgId: string, barcode: string): Promise<ProductRow | null> {
+    assertOrgId(orgId);
     const { data, error } = await supabase
       .from('products')
       .select('*')
+      .eq('org_id', orgId)
       .eq('barcode', barcode)
       .eq('is_active', true)
       .single();
@@ -110,8 +121,9 @@ export const productsService = {
     return data as ProductRow;
   },
 
-  /** Add new product */
+  /** Add new product — org_id must come from TenantContext */
   async create(product: Omit<ProductRow, 'id' | 'created_at' | 'updated_at'>): Promise<ProductRow> {
+    assertOrgId(product.org_id);
     const { data, error } = await supabase
       .from('products')
       .insert({ ...product, is_active: true })
@@ -122,12 +134,14 @@ export const productsService = {
     return data as ProductRow;
   },
 
-  /** Update existing product */
-  async update(id: string, updates: Partial<ProductRow>): Promise<ProductRow> {
+  /** Update existing product — double org_id guard */
+  async update(id: string, orgId: string, updates: Partial<ProductRow>): Promise<ProductRow> {
+    assertOrgId(orgId);
     const { data, error } = await supabase
       .from('products')
       .update({ ...updates, updated_at: new Date().toISOString() })
       .eq('id', id)
+      .eq('org_id', orgId)
       .select()
       .single();
 
@@ -135,12 +149,14 @@ export const productsService = {
     return data as ProductRow;
   },
 
-  /** Soft-delete a product (set is_active = false) */
-  async delete(id: string): Promise<void> {
+  /** Soft-delete a product — double org_id guard */
+  async delete(id: string, orgId: string): Promise<void> {
+    assertOrgId(orgId);
     const { error } = await supabase
       .from('products')
       .update({ is_active: false, updated_at: new Date().toISOString() })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('org_id', orgId);
 
     if (error) throw new Error(`products.delete: ${error.message}`);
   },
@@ -166,12 +182,13 @@ export const productsService = {
 // ═══════════════════════════════════════════════════════════
 export const settingsService = {
 
-  /** Fetch organization settings (first row or by org_id) */
-  async get(): Promise<StoreSettings> {
+  /** Fetch organization settings by org_id */
+  async get(orgId: string): Promise<StoreSettings> {
+    assertOrgId(orgId);
     const { data, error } = await supabase
       .from('settings')
       .select('*')
-      .order('created_at', { ascending: true })
+      .eq('org_id', orgId)
       .limit(1)
       .single();
 
@@ -182,12 +199,14 @@ export const settingsService = {
     return data as StoreSettings;
   },
 
-  /** Upsert (insert or update) organization settings */
-  async save(settings: Partial<StoreSettings>): Promise<StoreSettings> {
-    // Try update first
+  /** Upsert organization settings — scoped to org_id */
+  async save(orgId: string, settings: Partial<StoreSettings>): Promise<StoreSettings> {
+    assertOrgId(orgId);
+
     const { data: existing } = await supabase
       .from('settings')
       .select('id')
+      .eq('org_id', orgId)
       .limit(1)
       .single();
 
@@ -196,6 +215,7 @@ export const settingsService = {
         .from('settings')
         .update({ ...settings, updated_at: new Date().toISOString() })
         .eq('id', existing.id)
+        .eq('org_id', orgId)
         .select()
         .single();
 
@@ -204,7 +224,7 @@ export const settingsService = {
     } else {
       const { data, error } = await supabase
         .from('settings')
-        .insert(settings)
+        .insert({ ...settings, org_id: orgId })
         .select()
         .single();
 
@@ -226,6 +246,7 @@ export const posSalesService = {
    * 3. Create accounting entry (transactions)
    */
   async completeSale(saleData: {
+    org_id: string;
     invoice_number: string;
     invoice_uuid: string;
     cashier_id: string;
@@ -257,6 +278,7 @@ export const posSalesService = {
     const { data: invoice, error: invErr } = await supabase
       .from('invoices')
       .insert({
+        org_id: saleData.org_id,
         invoice_number: saleData.invoice_number,
         uuid: saleData.invoice_uuid,
         invoice_type: 'SIMPLIFIED',

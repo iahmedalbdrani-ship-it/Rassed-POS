@@ -8,6 +8,8 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
@@ -35,12 +37,40 @@ export const auth: Auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
+// ─── Detect Electron environment ────────────────────────────
+const isElectron = (): boolean =>
+  typeof window !== 'undefined' &&
+  typeof (window as any).process?.versions?.electron !== 'undefined';
+
 // ─── Auth Functions ──────────────────────────────────────────
 
-/** تسجيل دخول بـ Google Popup */
+/**
+ * تسجيل دخول بـ Google.
+ *
+ * • في Electron: يستخدم signInWithRedirect لتجنب مشكلة COOP
+ *   التي تمنع window.closed polling في signInWithPopup.
+ * • في المتصفح: يستخدم signInWithPopup (تجربة أفضل للمستخدم).
+ */
 export async function signInWithGoogle(): Promise<User> {
+  if (isElectron()) {
+    // Electron: check for pending redirect result first
+    const redirectResult = await getRedirectResult(auth);
+    if (redirectResult?.user) return redirectResult.user;
+    // Trigger the redirect flow
+    await signInWithRedirect(auth, googleProvider);
+    // signInWithRedirect navigates away; onAuthStateChanged will
+    // pick up the user when the app reloads after the redirect.
+    // Return a rejected promise to signal pending state.
+    throw new Error('REDIRECT_PENDING');
+  }
   const result = await signInWithPopup(auth, googleProvider);
   return result.user;
+}
+
+/** استرجاع نتيجة Google Redirect (للاستدعاء عند بدء التطبيق) */
+export async function getGoogleRedirectResult(): Promise<User | null> {
+  const result = await getRedirectResult(auth);
+  return result?.user ?? null;
 }
 
 /** تسجيل دخول بالإيميل وكلمة المرور */

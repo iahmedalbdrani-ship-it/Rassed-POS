@@ -35,7 +35,8 @@ import React, {
 import { useReactToPrint } from 'react-to-print';
 import { QRCodeSVG } from 'qrcode.react';
 import { v4 as uuidv4 } from 'uuid';
-import { productsService, settingsService, posSalesService, type StoreSettings } from '../lib/supabase-services';
+import { productsService, settingsService, type StoreSettings } from '../lib/supabase-services';
+import { useCheckoutTransaction, type SaleResult } from '../hooks/useCheckoutTransaction';
 import InvoicePreviewModal, { type PreviewInvoice, type PreviewStore } from '../components/pos/InvoicePreviewModal';
 import {
   Search, ShoppingCart, Trash2, Plus, Minus, CreditCard,
@@ -968,7 +969,8 @@ const POSCashier: React.FC = () => {
   const [showLedger, setShowLedger]     = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
   const [barcodeBuffer, setBarcodeBuffer] = useState('');
-  const [savingCheckout, setSavingCheckout] = useState(false);
+  // ── Atomic checkout hook ─────────────────────────────────
+  const checkout = useCheckoutTransaction();
 
   const searchRef = useRef<HTMLInputElement>(null);
   const barcodeRef = useRef<HTMLInputElement>(null);
@@ -1179,74 +1181,81 @@ const POSCashier: React.FC = () => {
   const clearCart = useCallback(() => setCart([]), []);
 
   // ── Checkout ──────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────
+  // handleCheckoutConfirm — عملية البيع الذرية الموحدة
+  //
+  // سير العمل:
+  //  1. بناء بيانات الفاتورة + QR الضريبي
+  //  2. استدعاء process_invoice_with_stock (RPC ذري)
+  //     ← يحفظ الفاتورة + يخصم المخزون + يسجل القيد المحاسبي
+  //     ← إذا كان المخزون غير كافٍ → يرفع استثناء واضح
+  //  3. عند النجاح: طباعة حرارية تلقائية + تفريغ السلة + تحديث الـ UI
+  //  4. عند الفشل: عرض تنبيه للمستخدم بسبب واضح
+  // ─────────────────────────────────────────────────────────
   const handleCheckoutConfirm = async (payments: PaymentSplit[]) => {
-    // Prevent double-submit
-    if (savingCheckout) return;
+    if (checkout.isProcessing || checkout.isPrinting) return;
 
-    // 1. Check stock availability before proceeding
-    for (const item of cart) {
-      const fresh = products.find(p => p.id === item.id);
-      if (fresh && fresh.stock < item.qty) {
-        showNotification(`⚠️ مخزون "${item.name}" غير كافٍ (متبقٍ: ${fresh.stock})`);
-        return;
-      }
-    }
-
-    setSavingCheckout(true);
     const totalPaid = payments.reduce((acc, p) => acc + p.amount, 0);
     const changeDue = Math.max(0, totalPaid - totals.grand_total);
-
-    // 2. Use REAL timestamp for ZATCA compliance
-    const now = new Date();
-    const nowISO = now.toISOString();
+    const nowISO    = new Date().toISOString();
 
     const invoiceNumber = generateInvoiceNumber();
     const invoiceUUID   = uuidv4();
 
-    // 3. Generate ZATCA QR with real timestamp & values from DB settings
+    // QR ضريبي بالوقت الحقيقي
     const qrData = generateZatcaTLV(
       storeConfig.name,
       storeConfig.vat_number,
-      nowISO,                          // ← real timestamp, not hardcoded
+      nowISO,
       fmtNum(totals.grand_total),
       fmtNum(totals.total_vat),
     );
 
-    const invoice: Invoice = {
-      id: invoiceUUID,
+    // بناء الفاتورة المحلية للعرض والطباعة
+    const localInvoice: Invoice = {
+      id:            invoiceUUID,
       invoice_number: invoiceNumber,
-      created_at: nowISO,
-      cashier_id: CASHIER.id,
-      cashier_name: CASHIER.name,
-      branch_id: storeConfig.branch_id,
-      branch_name: storeConfig.branch_name,
-      items: cart,
+      created_at:    nowISO,
+      cashier_id:    CASHIER.id,
+      cashier_name:  CASHIER.name,
+      branch_id:     storeConfig.branch_id,
+      branch_name:   storeConfig.branch_name,
+      items:         cart,
       totals,
       payments,
-      change_due: changeDue,
-      zatca_qr: qrData,
-      status: 'completed',
+      change_due:    changeDue,
+      zatca_qr:      qrData,
+      status:        'completed',
     };
 
-    // 4. Double-entry accounting (local ledger)
-    const entry = createAccountingEntry(invoice);
+    // تسجيل قيد محاسبي محلي (للعرض في Ledger Panel)
+    const entry = createAccountingEntry(localInvoice);
     setLedger(prev => [...prev, entry]);
 
-    // 5. Optimistic UI: deduct inventory locally
-    setProducts(prev => deductInventory(prev, cart));
+    // إغلاق نافذة الدفع فوراً (UX: لا تُبقِ المستخدم ينتظر)
+    setIsCheckoutOpen(false);
 
-    // 6. Persist to Supabase (non-blocking — don't block UI on failure)
-    try {
-      await posSalesService.completeSale({
-        invoice_number: invoiceNumber,
-        invoice_uuid:   invoiceUUID,
-        cashier_id:     CASHIER.id,
-        cashier_name:   CASHIER.name,
-        branch_name:    storeConfig.branch_name,
+    // ── استدعاء الـ Hook الذري ──────────────────────────────
+    await checkout.processCheckout(
+      // payload
+      {
+        invoice_number:   invoiceNumber,
+        invoice_uuid:     invoiceUUID,
+        cashier_id:       CASHIER.id,
+        cashier_name:     CASHIER.name,
+        branch_name:      storeConfig.branch_name,
+        payment_method:   payments[0]?.method ?? 'cash',
+        payment_amount:   totalPaid,
+        subtotal_ex_vat:  totals.subtotal_ex_vat,
+        total_discount:   totals.total_discount,
+        total_vat:        totals.total_vat,
+        grand_total:      totals.grand_total,
+        zatca_qr:         qrData,
         items: cart.map(c => ({
           id:           c.id,
           name:         c.name,
-          barcode:      c.barcode,
+          name_en:      c.name_en ?? '',
+          barcode:      c.barcode ?? '',
           qty:          c.qty,
           unit_price:   c.price,
           discount_pct: c.discount_pct,
@@ -1254,27 +1263,50 @@ const POSCashier: React.FC = () => {
           vat_amount:   c.line_vat,
           line_total:   c.line_total_inc_vat,
         })),
-        subtotal_ex_vat: totals.subtotal_ex_vat,
-        total_discount:  totals.total_discount,
-        total_vat:       totals.total_vat,
-        grand_total:     totals.grand_total,
-        payment_method:  payments[0]?.method ?? 'cash',
-        payment_amount:  totalPaid,
-        zatca_qr:        qrData,
-        settings:        storeConfig as any,
-      });
-    } catch (err: any) {
-      // Non-fatal: sale is done locally; log the error
-      console.error('[POS] Supabase save error:', err.message);
-      showNotification('⚠️ تم تسجيل البيع محلياً — سيُزامَن لاحقاً');
-    } finally {
-      setSavingCheckout(false);
-    }
+      },
 
-    setCurrentInvoice(invoice);
-    setCompletedInvoice(invoice);
-    setIsCheckoutOpen(false);
-    clearCart();
+      // onPrint: طباعة حرارية تلقائية بعد حفظ ناجح
+      () => {
+        setCurrentInvoice(localInvoice);
+        // تشغيل الطباعة بعد تحديث الـ ref
+        setTimeout(() => handlePrint?.(), 80);
+      },
+
+      // onSuccess: تحديث الـ UI بعد اكتمال العملية
+      (result: SaleResult) => {
+        // خصم المخزون محلياً (optimistic + consistent with DB)
+        setProducts(prev => deductInventory(prev, cart));
+
+        // عرض فاتورة النجاح
+        setCompletedInvoice(localInvoice);
+        setCurrentInvoice(localInvoice);
+
+        // تفريغ السلة
+        clearCart();
+
+        // إشعار نجاح
+        showNotification(
+          `✅ تم البيع وتحديث المخزون — فاتورة ${result.invoice_number} محفوظة`,
+        );
+      },
+    );
+
+    // إذا فشلت العملية — عرض الخطأ للمستخدم
+    if (checkout.phase === 'error' && checkout.error) {
+      const err = checkout.error;
+      if (err.code === 'INSUFFICIENT_STOCK') {
+        showNotification(`⚠️ ${err.message}`);
+      } else if (err.code === 'NETWORK') {
+        showNotification('📶 لا يوجد اتصال بالإنترنت — تحقق من الشبكة');
+      } else {
+        showNotification(`❌ ${err.message}`);
+      }
+      // إعادة فتح نافذة الدفع عند فشل المخزون
+      if (err.code === 'INSUFFICIENT_STOCK' || err.code === 'PRODUCT_NOT_FOUND') {
+        setIsCheckoutOpen(true);
+      }
+      checkout.resetCheckout();
+    }
   };
 
   const handleNewSale = () => {
@@ -1900,28 +1932,33 @@ const POSCashier: React.FC = () => {
             </div>
 
             <button
-              disabled={cart.length === 0 || savingCheckout}
+              disabled={cart.length === 0 || checkout.isProcessing || checkout.isPrinting}
               onClick={() => setIsCheckoutOpen(true)}
               style={{
                 width: '100%', padding: '1rem',
-                background: cart.length > 0 && !savingCheckout
+                background: cart.length > 0 && !checkout.isProcessing
                   ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
                   : 'rgba(0,0,0,0.1)',
                 border: 'none', borderRadius: '1.25rem',
-                color: cart.length > 0 && !savingCheckout ? '#fff' : '#94a3b8',
+                color: cart.length > 0 && !checkout.isProcessing ? '#fff' : '#94a3b8',
                 fontWeight: 900, fontSize: '1.05rem',
-                cursor: cart.length > 0 && !savingCheckout ? 'pointer' : 'not-allowed',
+                cursor: cart.length > 0 && !checkout.isProcessing ? 'pointer' : 'not-allowed',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.6rem',
-                boxShadow: cart.length > 0 && !savingCheckout ? '0 8px 24px rgba(245,158,11,0.4)' : 'none',
+                boxShadow: cart.length > 0 && !checkout.isProcessing ? '0 8px 24px rgba(245,158,11,0.4)' : 'none',
                 transition: 'all 0.2s',
                 fontFamily: 'inherit',
-                animation: cart.length > 0 && !savingCheckout ? 'pulse-amber 3s infinite' : undefined,
+                animation: cart.length > 0 && !checkout.isProcessing ? 'pulse-amber 3s infinite' : undefined,
               }}
             >
-              {savingCheckout ? (
+              {checkout.isProcessing ? (
                 <>
                   <div style={{ width: '18px', height: '18px', border: '2.5px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
-                  جاري حفظ الفاتورة...
+                  {checkout.phase === 'validating' ? 'جارٍ التحقق من المخزون...' : 'جارٍ حفظ الفاتورة...'}
+                </>
+              ) : checkout.isPrinting ? (
+                <>
+                  <div style={{ width: '18px', height: '18px', border: '2.5px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+                  جارٍ الطباعة...
                 </>
               ) : (
                 <>
@@ -2005,6 +2042,90 @@ const POSCashier: React.FC = () => {
           />
         );
       })()}
+
+      {/* ─── SALE SUCCESS TOAST ─────────────────────────────── */}
+      {checkout.isSuccess && checkout.result && (
+        <div
+          dir="rtl"
+          style={{
+            position: 'fixed', bottom: '1.5rem', right: '1.5rem',
+            zIndex: 3000,
+            background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+            color: '#fff',
+            borderRadius: '1.5rem',
+            padding: '1rem 1.4rem',
+            display: 'flex', alignItems: 'center', gap: '0.75rem',
+            boxShadow: '0 12px 36px rgba(5,150,105,0.38)',
+            fontFamily: 'Tajawal, sans-serif',
+            minWidth: 280,
+            animation: 'slideUpFade 0.35s ease both',
+          }}
+        >
+          <CheckCircle2 size={26} style={{ flexShrink: 0 }} />
+          <div>
+            <div style={{ fontWeight: 900, fontSize: '0.95rem' }}>
+              تم البيع وتحديث المخزون ✓
+            </div>
+            <div style={{ fontSize: '0.78rem', opacity: 0.85, marginTop: 2 }}>
+              فاتورة {checkout.result.invoice_number} — محفوظة في سجل الفواتير الحكومي
+            </div>
+          </div>
+          <button
+            onClick={() => checkout.resetCheckout()}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', marginRight: 'auto', opacity: 0.7 }}
+          >
+            <X size={16} color="#fff" />
+          </button>
+        </div>
+      )}
+
+      {/* ─── CHECKOUT ERROR BANNER ──────────────────────────── */}
+      {checkout.hasError && checkout.error && (
+        <div
+          dir="rtl"
+          style={{
+            position: 'fixed', bottom: '1.5rem', right: '1.5rem',
+            zIndex: 3000,
+            background: checkout.error.code === 'INSUFFICIENT_STOCK'
+              ? 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)'
+              : 'linear-gradient(135deg, #d97706 0%, #b45309 100%)',
+            color: '#fff',
+            borderRadius: '1.5rem',
+            padding: '1rem 1.4rem',
+            display: 'flex', alignItems: 'center', gap: '0.75rem',
+            boxShadow: '0 12px 36px rgba(220,38,38,0.3)',
+            fontFamily: 'Tajawal, sans-serif',
+            minWidth: 300, maxWidth: 420,
+            animation: 'slideUpFade 0.3s ease both',
+          }}
+        >
+          <AlertCircle size={24} style={{ flexShrink: 0 }} />
+          <div>
+            <div style={{ fontWeight: 900, fontSize: '0.9rem' }}>
+              {checkout.error.code === 'INSUFFICIENT_STOCK' ? 'مخزون غير كافٍ' :
+               checkout.error.code === 'NETWORK'            ? 'خطأ في الاتصال' :
+               'فشلت عملية الحفظ'}
+            </div>
+            <div style={{ fontSize: '0.78rem', opacity: 0.9, marginTop: 2 }}>
+              {checkout.error.message}
+            </div>
+          </div>
+          <button
+            onClick={() => checkout.resetCheckout()}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', marginRight: 'auto', opacity: 0.7 }}
+          >
+            <X size={16} color="#fff" />
+          </button>
+        </div>
+      )}
+
+      {/* CSS for toast animation */}
+      <style>{`
+        @keyframes slideUpFade {
+          from { opacity: 0; transform: translateY(16px) scale(0.95); }
+          to   { opacity: 1; transform: translateY(0)    scale(1);    }
+        }
+      `}</style>
 
       {/* ─── LEDGER DRAWER ─── */}
       {showLedger && (

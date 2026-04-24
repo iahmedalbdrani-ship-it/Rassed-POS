@@ -5,17 +5,23 @@
   "type": "module",
   "main": "main.cjs",
   "scripts": {
-    "dev": "vite",
-    "desktop": "concurrently \"vite\" \"electron .\"",
-    "build": "tsc -b && vite build",
+    "dev": "vite --mode development",
+    "build:dev": "tsc -b && vite build --mode development",
+    "build:prod": "tsc -b && vite build --mode production",
+    "build": "npm run build:prod",
+    "preview": "vite preview",
+    "type-check": "tsc --noEmit",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "desktop": "concurrently \"vite --mode development\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:dev": "concurrently \"vite --mode development\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:prod": "electron ."
   },
   "dependencies": {
     "@dataconnect/generated": "file:src/dataconnect-generated",
     "@supabase/supabase-js": "^2.103.3",
     "@tailwindcss/vite": "^4.2.2",
     "@types/uuid": "^10.0.0",
+    "dexie": "^4.4.2",
     "electron-builder": "^26.8.1",
     "firebase": "^12.12.0",
     "framer-motion": "^12.38.0",

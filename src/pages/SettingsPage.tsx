@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { settingsService, type StoreSettings } from '../lib/supabase-services';
 import supabase from '../lib/supabase';
+import { useTenant } from '../contexts/TenantContext';
 
 type Section = 'company' | 'zatca' | 'fatoora' | 'users' | 'fiscal';
 
@@ -67,11 +68,12 @@ const MAX_SIZE_MB   = 2;
 
 interface LogoUploadZoneProps {
   currentUrl?: string;
+  orgId: string;
   onUploadSuccess: (newUrl: string) => void;
   onError: (msg: string) => void;
 }
 
-function LogoUploadZone({ currentUrl, onUploadSuccess, onError }: LogoUploadZoneProps) {
+function LogoUploadZone({ currentUrl, orgId, onUploadSuccess, onError }: LogoUploadZoneProps) {
   const inputRef             = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [preview,   setPreview]   = useState<string | null>(currentUrl ?? null);
@@ -99,7 +101,8 @@ function LogoUploadZone({ currentUrl, onUploadSuccess, onError }: LogoUploadZone
     try {
       // ── Upload to Supabase Storage ────────────────────────────
       const ext      = file.name.split('.').pop() ?? 'jpg';
-      const fileName = `logo_${Date.now()}.${ext}`;
+      const safeOrg  = orgId || 'default';
+      const fileName = `orgs/${safeOrg}/logo_${Date.now()}.${ext}`;
 
       const { error: uploadError } = await supabase.storage
         .from('logos')
@@ -115,7 +118,7 @@ function LogoUploadZone({ currentUrl, onUploadSuccess, onError }: LogoUploadZone
       const publicUrl = urlData.publicUrl;
 
       // ── Save logo_url in settings table ──────────────────────
-      await settingsService.save({ logo_url: publicUrl });
+      await settingsService.save(orgId, { logo_url: publicUrl });
 
       // ── Notify parent to update local form state ──────────────
       onUploadSuccess(publicUrl);
@@ -240,6 +243,7 @@ function LogoUploadZone({ currentUrl, onUploadSuccess, onError }: LogoUploadZone
 
 // ─── Section: Company (Connected to Supabase) ─────────────────
 function CompanySection() {
+  const { orgId } = useTenant();
   const [form, setForm] = useState<Partial<StoreSettings>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
@@ -247,9 +251,10 @@ function CompanySection() {
 
   // Load settings from Supabase on mount
   useEffect(() => {
+    if (!orgId) return;
     (async () => {
       try {
-        const data = await settingsService.get();
+        const data = await settingsService.get(orgId);
         setForm(data);
       } catch (err: any) {
         console.error('[Settings]', err);
@@ -258,7 +263,7 @@ function CompanySection() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [orgId]);
 
   const handleChange = (key: keyof StoreSettings, value: string) => {
     setForm(prev => ({ ...prev, [key]: value }));
@@ -267,7 +272,7 @@ function CompanySection() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await settingsService.save(form);
+      await settingsService.save(orgId, form);
       setToast({ message: 'تم حفظ إعدادات الشركة بنجاح ✓', type: 'success' });
     } catch (err: any) {
       setToast({ message: err.message ?? 'حدث خطأ أثناء الحفظ', type: 'error' });
@@ -303,6 +308,7 @@ function CompanySection() {
         >
           <LogoUploadZone
             currentUrl={form.logo_url}
+            orgId={orgId}
             onUploadSuccess={(url) => {
               setForm(prev => ({ ...prev, logo_url: url }));
               setToast({ message: 'تم رفع الشعار وحفظه بنجاح ✓', type: 'success' });
@@ -430,6 +436,7 @@ function CompanySection() {
 
 // ─── Section: ZATCA ───────────────────────────────────────────
 function ZatcaSection() {
+  const { orgId } = useTenant();
   const [form, setForm]   = useState<Partial<StoreSettings>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
@@ -438,12 +445,13 @@ function ZatcaSection() {
   const [toast, setToast]     = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
+    if (!orgId) return;
     (async () => {
-      try { const data = await settingsService.get(); setForm(data); }
+      try { const data = await settingsService.get(orgId); setForm(data); }
       catch { /* non-critical */ }
       finally { setLoading(false); }
     })();
-  }, []);
+  }, [orgId]);
 
   const testConnection = () => {
     setStatus('testing');
@@ -453,7 +461,7 @@ function ZatcaSection() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await settingsService.save({
+      await settingsService.save(orgId, {
         zatca_env: form.zatca_env,
         zatca_cert: form.zatca_cert,
         zatca_private_key: form.zatca_private_key,
@@ -563,18 +571,24 @@ function ZatcaSection() {
 
 // ─── Section: Users (Fetched from Supabase auth.users) ────────
 function UsersSection() {
+  const { orgId } = useTenant();
   const [users, setUsers]   = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!orgId) return;
     (async () => {
       try {
-        const { data, error } = await supabase.from('user_profiles').select('*').order('created_at');
+        const { data, error } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('org_id', orgId)
+          .order('created_at');
         if (!error && data) setUsers(data);
       } catch { /* non-critical */ }
       finally { setLoading(false); }
     })();
-  }, []);
+  }, [orgId]);
 
   const ROLE_COLORS: Record<string, string> = {
     admin: '#f97316', accountant: '#3b82f6', cashier: '#10b981', ADMIN: '#f97316', ACCOUNTANT: '#3b82f6', CASHIER: '#10b981',
@@ -639,6 +653,7 @@ function UsersSection() {
 
 // ─── Section: Fiscal Year (Connected to Supabase) ─────────────
 function FiscalSection() {
+  const { orgId } = useTenant();
   const [periods, setPeriods] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [newStart, setNewStart] = useState('');
@@ -647,14 +662,19 @@ function FiscalSection() {
   const [toast, setToast]       = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
+    if (!orgId) return;
     (async () => {
       try {
-        const { data } = await supabase.from('fiscal_periods').select('*').order('start_date', { ascending: false });
+        const { data } = await supabase
+          .from('fiscal_periods')
+          .select('*')
+          .eq('org_id', orgId)
+          .order('start_date', { ascending: false });
         if (data) setPeriods(data);
       } catch { /* non-critical */ }
       finally { setLoading(false); }
     })();
-  }, []);
+  }, [orgId]);
 
   const handleCreate = async () => {
     if (!newStart || !newEnd) return;

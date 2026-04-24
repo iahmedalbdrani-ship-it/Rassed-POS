@@ -3,24 +3,12 @@
 // Full CRUD + Realtime Subscriptions + Type-safe Operations
 // ============================================================
 
-import { createClient, RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
+import { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 
-// ─── Environment ────────────────────────────────────────────
-const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL  as string;
-const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON as string;
-
-if (!SUPABASE_URL || !SUPABASE_ANON) {
-  throw new Error('[Supabase] Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON in .env');
-}
-
-export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON, {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true,
-  },
-  realtime: { params: { eventsPerSecond: 10 } },
-});
+// ─── Centralized environment-aware client ─────────────────────
+export { supabase } from '@/config/supabase';
+import { supabase } from '@/config/supabase';
+export type { SupabaseClient };
 
 // ─── Types ───────────────────────────────────────────────────
 export type TransactionType     = 'DEBIT' | 'CREDIT';

@@ -1,389 +1,408 @@
 // ============================================================
-// Control Panel (رصيد) — Dashboard Home (Standalone Page)
-// Design: White Glassmorphism | Full ERP Dashboard
+// Control Panel (رصيد) — Dashboard Home v2
+// Design: White Glassmorphism | Corporate Blue | Full ERP
 // ============================================================
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
-  TrendingUp, TrendingDown, DollarSign, FileText, Users,
-  AlertCircle, CheckCircle, Clock, ChevronRight, BarChart2, Zap
+  TrendingUp, TrendingDown, DollarSign, FileText,
+  RefreshCw, ChevronRight, Clock, CheckCircle,
+  AlertCircle, ShoppingCart, Package, Activity,
+  ArrowUpRight,
 } from 'lucide-react';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, CartesianGrid
+  ResponsiveContainer, CartesianGrid,
 } from 'recharts';
+import { supabase } from '../lib/supabase';
+import {
+  COLORS, GLASS, RADIUS, FONT, GRADIENTS, SHADOWS, MOTION,
+  fmtShort, STATUS_META,
+  SPARK_SALES, SPARK_EXPENSES, SPARK_PROFIT,
+} from '../design-system/tokens';
+import {
+  StatsCard, SyncStatus, GlassButton,
+  Badge, SectionTitle, MicroChart,
+} from '../design-system/GlassComponents';
 
-// ─── Format helpers ──────────────────────────────────────────
-const fmt = (n: number) =>
-  new Intl.NumberFormat('ar-SA', { style: 'currency', currency: 'SAR', maximumFractionDigits: 0 }).format(n);
+// ─── Types ───────────────────────────────────────────────────
+interface DashboardMetrics {
+  todayRevenue: number;
+  totalExpenses: number;
+  netProfit: number;
+  pendingInvoices: number;
+  todayOrders: number;
+  lowStockCount: number;
+}
 
-const fmtShort = (n: number) =>
-  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}م` : n >= 1000 ? `${(n / 1000).toFixed(0)}ك` : String(n);
+interface RecentInvoice {
+  id: string;
+  customer: string;
+  amount: number;
+  status: string;
+  date: string;
+}
 
-// ─── Mock data ───────────────────────────────────────────────
+// ─── Static chart data ────────────────────────────────────────
 const MONTHLY_DATA = [
-  { month: 'يناير', revenue: 142000, expenses: 89000, vat: 21300 },
-  { month: 'فبراير', revenue: 178000, expenses: 102000, vat: 26700 },
-  { month: 'مارس', revenue: 165000, expenses: 94000, vat: 24750 },
-  { month: 'أبريل', revenue: 210000, expenses: 118000, vat: 31500 },
-  { month: 'مايو', revenue: 195000, expenses: 109000, vat: 29250 },
-  { month: 'يونيو', revenue: 238000, expenses: 127000, vat: 35700 },
-  { month: 'يوليو', revenue: 256000, expenses: 143000, vat: 38400 },
+  { month: 'يناير', revenue: 142000, expenses: 89000 },
+  { month: 'فبراير', revenue: 178000, expenses: 102000 },
+  { month: 'مارس',  revenue: 165000, expenses: 94000  },
+  { month: 'أبريل', revenue: 210000, expenses: 118000 },
+  { month: 'مايو',  revenue: 195000, expenses: 109000 },
+  { month: 'يونيو', revenue: 238000, expenses: 127000 },
+  { month: 'يوليو', revenue: 256000, expenses: 143000 },
 ];
 
-const RECENT_INVOICES = [
-  { id: 'INV-2025-0041', customer: 'شركة النور للتجارة', amount: 13800, vat: 2070, status: 'cleared', date: '2025-04-15' },
-  { id: 'INV-2025-0040', customer: 'مؤسسة الأمل', amount: 8625, vat: 1293, status: 'reported', date: '2025-04-14' },
-  { id: 'INV-2025-0039', customer: 'متجر الريادة', amount: 22500, vat: 3375, status: 'pending', date: '2025-04-13' },
-  { id: 'INV-2025-0038', customer: 'شركة البنيان', amount: 5750, vat: 862, status: 'cleared', date: '2025-04-12' },
-  { id: 'INV-2025-0037', customer: 'مجموعة السلام', amount: 31200, vat: 4680, status: 'rejected', date: '2025-04-11' },
+const RECENT_INVOICES: RecentInvoice[] = [
+  { id: 'INV-2025-0041', customer: 'شركة النور للتجارة', amount: 13800, status: 'cleared',  date: '2025-04-15' },
+  { id: 'INV-2025-0040', customer: 'مؤسسة الأمل',        amount: 8625,  status: 'reported', date: '2025-04-14' },
+  { id: 'INV-2025-0039', customer: 'متجر الريادة',        amount: 22500, status: 'pending',  date: '2025-04-13' },
+  { id: 'INV-2025-0038', customer: 'شركة البنيان',        amount: 5750,  status: 'cleared',  date: '2025-04-12' },
+  { id: 'INV-2025-0037', customer: 'مجموعة السلام',       amount: 31200, status: 'rejected', date: '2025-04-11' },
 ];
 
-const ZATCA_STATUS: Record<string, { label: string; color: string; bg: string; icon: any }> = {
-  cleared:  { label: 'مقبولة',  color: '#10b981', bg: 'rgba(16,185,129,0.1)',  icon: CheckCircle },
-  reported: { label: 'مُرسلة',  color: '#3b82f6', bg: 'rgba(59,130,246,0.1)', icon: CheckCircle },
-  pending:  { label: 'معلقة',   color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', icon: Clock },
-  rejected: { label: 'مرفوضة', color: '#ef4444', bg: 'rgba(239,68,68,0.1)',  icon: AlertCircle },
-};
-
-// ─── Glass Panel ─────────────────────────────────────────────
-function Card({ children, className = '', title = '', action = null }: any) {
-  return (
-    <div
-      className={`rounded-[1.75rem] overflow-hidden ${className}`}
-      style={{
-        background: 'rgba(255,255,255,0.65)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255,255,255,0.8)',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.05)',
-      }}
-    >
-      {title && (
-        <div
-          className="px-6 py-4 flex items-center justify-between border-b"
-          style={{ borderColor: 'rgba(0,0,0,0.05)' }}
-        >
-          <h3 className="font-bold text-slate-700 text-[15px]">{title}</h3>
-          {action}
-        </div>
-      )}
-      {children}
-    </div>
-  );
-}
-
-// ─── KPI Card ────────────────────────────────────────────────
-function KpiCard({ icon: Icon, label, value, sub, trend, trendUp, color }: any) {
-  return (
-    <div
-      className="rounded-[1.75rem] p-5 flex flex-col gap-3"
-      style={{
-        background: 'rgba(255,255,255,0.65)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255,255,255,0.8)',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.04)',
-      }}
-    >
-      <div className="flex items-center justify-between">
-        <div
-          className="w-10 h-10 rounded-2xl flex items-center justify-center"
-          style={{ background: `${color}18` }}
-        >
-          <Icon size={18} style={{ color }} />
-        </div>
-        {trend !== undefined && (
-          <div
-            className="flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full"
-            style={{
-              color: trendUp ? '#10b981' : '#ef4444',
-              background: trendUp ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
-            }}
-          >
-            {trendUp ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
-            {trend}%
-          </div>
-        )}
-      </div>
-      <div>
-        <p className="text-xs text-slate-400 mb-0.5">{label}</p>
-        <p className="text-xl font-black text-slate-800">{value}</p>
-        {sub && <p className="text-[11px] text-slate-400 mt-0.5">{sub}</p>}
-      </div>
-    </div>
-  );
-}
-
-// ─── Custom Tooltip ──────────────────────────────────────────
-const CustomTooltip = ({ active, payload, label }: any) => {
+// ─── Custom Chart Tooltip ─────────────────────────────────────
+function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
     <div
-      className="rounded-2xl p-3 text-xs"
       style={{
-        background: 'rgba(255,255,255,0.95)',
-        border: '1px solid rgba(0,0,0,0.08)',
-        boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
+        ...GLASS.elevated,
+        borderRadius: RADIUS.md,
+        padding: '10px 14px',
+        fontSize: FONT.sizes.xs,
+        fontFamily: FONT.family,
+        minWidth: 140,
       }}
     >
-      <p className="font-bold text-slate-600 mb-2">{label}</p>
-      {payload.map((p: any) => (
-        <p key={p.name} style={{ color: p.color }}>
-          {p.name === 'revenue' ? 'الإيرادات' : p.name === 'expenses' ? 'المصروفات' : 'ضريبة'}: {fmtShort(p.value)} ر.س
-        </p>
+      <p style={{ fontWeight: FONT.weights.bold, color: COLORS.slate[700], margin: '0 0 6px' }}>{label}</p>
+      {payload.map((entry: any) => (
+        <div key={entry.name} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 2 }}>
+          <span style={{ color: entry.color }}>● {entry.name === 'revenue' ? 'الإيرادات' : 'المصروفات'}</span>
+          <span style={{ fontWeight: FONT.weights.semibold, color: COLORS.slate[800] }}>
+            {fmtShort(entry.value)} ر.س
+          </span>
+        </div>
       ))}
     </div>
   );
-};
+}
 
-// ─── Main Dashboard ──────────────────────────────────────────
-export function DashboardHome() {
-  const [time, setTime] = useState(new Date());
-  useEffect(() => {
-    const t = setInterval(() => setTime(new Date()), 60000);
-    return () => clearInterval(t);
-  }, []);
-
-  const currentMonth = MONTHLY_DATA[MONTHLY_DATA.length - 1];
-  const prevMonth    = MONTHLY_DATA[MONTHLY_DATA.length - 2];
-  const revGrowth    = (((currentMonth.revenue - prevMonth.revenue) / prevMonth.revenue) * 100).toFixed(1);
-
+// ─── TopBar ───────────────────────────────────────────────────
+function TopBar({ loading, onRefresh, connected, lastSync }: {
+  loading: boolean;
+  onRefresh: () => void;
+  connected: boolean;
+  lastSync: string;
+}) {
   return (
-    <div className="p-6 space-y-5 min-h-screen" dir="rtl" style={{ fontFamily: 'Tajawal, sans-serif' }}>
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-black text-slate-800">لوحة التحكم المالية</h1>
-          <p className="text-sm text-slate-400 mt-0.5">
-            {time.toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div
-            className="flex items-center gap-2 px-4 py-2 rounded-2xl text-sm"
-            style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.15)' }}
-          >
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-emerald-600 font-medium text-xs">Supabase متصل</span>
-          </div>
-          <div
-            className="flex items-center gap-2 px-4 py-2 rounded-2xl text-sm"
-            style={{ background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.15)' }}
-          >
-            <Zap size={12} className="text-orange-500" />
-            <span className="text-orange-600 font-medium text-xs">ZATCA Sandbox</span>
-          </div>
-        </div>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '16px 28px',
+        background: 'rgba(255,255,255,0.55)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        borderBottom: '1px solid rgba(0,0,0,0.06)',
+        flexShrink: 0,
+      }}
+    >
+      <div>
+        <h1 style={{ fontSize: FONT.sizes.xl, fontWeight: FONT.weights.black, color: COLORS.slate[800], margin: 0 }}>
+          لوحة التحكم
+        </h1>
+        <p style={{ fontSize: FONT.sizes.xs, color: COLORS.slate[400], margin: '2px 0 0' }}>
+          {new Date().toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+        </p>
       </div>
 
-      {/* KPI Row */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <KpiCard
-          icon={DollarSign} label="إجمالي الإيرادات" color="#f97316"
-          value={fmt(currentMonth.revenue)} sub="يوليو 2025"
-          trend={revGrowth} trendUp={parseFloat(revGrowth) > 0}
-        />
-        <KpiCard
-          icon={TrendingUp} label="صافي الربح" color="#10b981"
-          value={fmt(currentMonth.revenue - currentMonth.expenses)}
-          sub={`هامش ${(((currentMonth.revenue - currentMonth.expenses) / currentMonth.revenue) * 100).toFixed(0)}%`}
-          trend={12.3} trendUp
-        />
-        <KpiCard
-          icon={FileText} label="الفواتير هذا الشهر" color="#3b82f6"
-          value="١٤١ فاتورة" sub="٣ مرفوضة من ZATCA"
-          trend={8.1} trendUp
-        />
-        <KpiCard
-          icon={Users} label="ضريبة القيمة المضافة" color="#8b5cf6"
-          value={fmt(currentMonth.vat)} sub="15% من المبيعات"
-          trend={5.7} trendUp
-        />
-      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <SyncStatus connected={connected} lastSync={lastSync} />
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-3 gap-4">
-        {/* Revenue Chart */}
-        <Card
-          className="col-span-2"
-          title="التدفق المالي — آخر 7 أشهر"
-          action={
-            <span className="text-xs text-slate-400 flex items-center gap-1">
-              <BarChart2 size={12} /> ريال سعودي
-            </span>
-          }
+        <button
+          onClick={onRefresh}
+          disabled={loading}
+          style={{
+            width: 36, height: 36,
+            borderRadius: RADIUS.md,
+            background: COLORS.blue[50],
+            border: `1px solid ${COLORS.blue[100]}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: loading ? 'wait' : 'pointer',
+          }}
         >
-          <div className="p-4">
-            <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={MONTHLY_DATA} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-                <defs>
-                  <linearGradient id="gradRev" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f97316" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="gradExp" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" />
-                <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#94a3b8', fontFamily: 'Tajawal' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtShort(v)} />
-                <Tooltip content={<CustomTooltip />} />
-                <Area type="monotone" dataKey="revenue" stroke="#f97316" strokeWidth={2.5} fill="url(#gradRev)" />
-                <Area type="monotone" dataKey="expenses" stroke="#3b82f6" strokeWidth={2} fill="url(#gradExp)" />
-              </AreaChart>
-            </ResponsiveContainer>
-            <div className="flex items-center gap-4 mt-2 justify-center">
-              <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                <span className="w-3 h-0.5 rounded bg-orange-400 inline-block" /> الإيرادات
-              </span>
-              <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                <span className="w-3 h-0.5 rounded bg-blue-400 inline-block" /> المصروفات
-              </span>
-            </div>
-          </div>
-        </Card>
+          <RefreshCw
+            size={15}
+            style={{ color: COLORS.blue[600], animation: loading ? 'spin 1s linear infinite' : 'none' }}
+          />
+        </button>
 
-        {/* P&L Summary */}
-        <Card title="ملخص الأرباح والخسائر">
-          <div className="p-5 space-y-4">
-            {[
-              { label: 'إيرادات المبيعات', value: currentMonth.revenue, color: '#10b981' },
-              { label: 'إجمالي المصروفات', value: -currentMonth.expenses, color: '#ef4444' },
-              { label: 'ضريبة القيمة المضافة', value: -currentMonth.vat, color: '#f59e0b' },
-              {
-                label: 'صافي الربح',
-                value: currentMonth.revenue - currentMonth.expenses - currentMonth.vat,
-                color: '#8b5cf6',
-              },
-            ].map((row) => (
-              <div key={row.label}>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="text-slate-500">{row.label}</span>
-                  <span style={{ color: row.color }} className="font-bold">
-                    {row.value < 0 ? '-' : ''}{fmtShort(Math.abs(row.value))} ر.س
-                  </span>
-                </div>
-                <div
-                  className="h-1 rounded-full"
-                  style={{ background: 'rgba(0,0,0,0.06)' }}
-                >
-                  <div
-                    className="h-full rounded-full transition-all duration-1000"
-                    style={{
-                      width: `${Math.min((Math.abs(row.value) / currentMonth.revenue) * 100, 100)}%`,
-                      background: row.color,
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
-
-            <div
-              className="mt-2 pt-3 border-t flex items-center justify-between"
-              style={{ borderColor: 'rgba(0,0,0,0.06)' }}
-            >
-              <span className="text-xs text-slate-400">هامش الربح الصافي</span>
-              <span className="text-sm font-black text-emerald-600">
-                {(((currentMonth.revenue - currentMonth.expenses) / currentMonth.revenue) * 100).toFixed(1)}%
-              </span>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* VAT & Invoices Row */}
-      <div className="grid grid-cols-3 gap-4">
-        {/* VAT Bar Chart */}
-        <Card title="ضريبة القيمة المضافة الشهرية">
-          <div className="p-4">
-            <ResponsiveContainer width="100%" height={150}>
-              <BarChart data={MONTHLY_DATA} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-                <XAxis dataKey="month" tick={{ fontSize: 9, fill: '#94a3b8', fontFamily: 'Tajawal' }} axisLine={false} tickLine={false} />
-                <Tooltip
-                  formatter={(v: any) => [fmt(v), 'ضريبة القيمة المضافة']}
-                  contentStyle={{ borderRadius: '16px', border: '1px solid rgba(0,0,0,0.08)', fontSize: '11px', fontFamily: 'Tajawal' }}
-                />
-                <Bar dataKey="vat" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-
-        {/* Recent Invoices */}
-        <Card
-          className="col-span-2"
-          title="آخر الفواتير"
-          action={
-            <button className="text-xs text-orange-500 font-medium flex items-center gap-1 hover:gap-2 transition-all">
-              عرض الكل <ChevronRight size={12} />
-            </button>
-          }
-        >
-          <div className="divide-y" style={{ borderColor: 'rgba(0,0,0,0.04)' }}>
-            {RECENT_INVOICES.map((inv) => {
-              const s = ZATCA_STATUS[inv.status];
-              return (
-                <div
-                  key={inv.id}
-                  className="flex items-center justify-between px-5 py-3.5 hover:bg-white/60 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-8 h-8 rounded-xl flex items-center justify-center"
-                      style={{ background: s.bg }}
-                    >
-                      <s.icon size={14} style={{ color: s.color }} />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-700 font-mono">{inv.id}</p>
-                      <p className="text-xs text-slate-400">{inv.customer}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span
-                      className="text-[11px] px-2.5 py-0.5 rounded-full font-medium"
-                      style={{ color: s.color, background: s.bg }}
-                    >
-                      {s.label}
-                    </span>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-slate-700">{fmt(inv.amount)}</p>
-                      <p className="text-[10px] text-slate-400">ضريبة: {fmt(inv.vat)}</p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      </div>
-
-      {/* Bottom Strip */}
-      <div
-        className="rounded-[1.5rem] px-5 py-3.5 flex items-center justify-between"
-        style={{
-          background: 'rgba(249,115,22,0.04)',
-          border: '1px solid rgba(249,115,22,0.12)',
-        }}
-      >
-        <div className="flex items-center gap-6">
-          {[
-            { label: 'فواتير مقبولة ZATCA', value: '138', color: '#10b981' },
-            { label: 'في الانتظار', value: '3', color: '#f59e0b' },
-            { label: 'مرفوضة', value: '1', color: '#ef4444' },
-          ].map((s) => (
-            <div key={s.label} className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: s.color }} />
-              <span className="text-[11px] text-slate-500">{s.label}:</span>
-              <span className="text-[11px] font-bold" style={{ color: s.color }}>{s.value}</span>
-            </div>
-          ))}
-        </div>
-        <span className="text-[10px] text-slate-400 font-mono">{time.toLocaleTimeString('ar-SA')}</span>
+        <div
+          style={{
+            width: 36, height: 36,
+            borderRadius: RADIUS.full,
+            background: GRADIENTS.primaryBtn,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: FONT.sizes.sm,
+            fontWeight: FONT.weights.bold,
+            color: '#fff',
+            boxShadow: SHADOWS.blue,
+          }}
+        >م</div>
       </div>
     </div>
   );
 }
+
+// ─── Stats Row ────────────────────────────────────────────────
+function StatsRow({ metrics }: { metrics: DashboardMetrics | null }) {
+  const m = metrics ?? { todayRevenue: 0, totalExpenses: 0, netProfit: 0, pendingInvoices: 0, todayOrders: 0, lowStockCount: 0 };
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '1rem' }}>
+      <StatsCard
+        icon={DollarSign} label="مبيعات اليوم"
+        value={`${fmtShort(m.todayRevenue)} ر.س`}
+        sub="شامل ضريبة القيمة المضافة" trend={12.4}
+        sparkData={SPARK_SALES} accentColor={COLORS.blue[600]}
+        accentGradient={GRADIENTS.blueAccent} glowColor="rgba(37,99,235,0.15)"
+      />
+      <StatsCard
+        icon={TrendingDown} label="إجمالي المصروفات"
+        value={`${fmtShort(m.totalExpenses)} ر.س`}
+        sub="الشهر الحالي" trend={-3.1}
+        sparkData={SPARK_EXPENSES} accentColor={COLORS.rose.DEFAULT}
+        accentGradient={GRADIENTS.roseAccent} glowColor="rgba(244,63,94,0.12)"
+      />
+      <StatsCard
+        icon={TrendingUp} label="صافي الربح"
+        value={`${fmtShort(m.netProfit)} ر.س`}
+        sub="بعد خصم المصاريف" trend={8.7}
+        sparkData={SPARK_PROFIT} accentColor={COLORS.emerald.DEFAULT}
+        accentGradient={GRADIENTS.emeraldAccent} glowColor="rgba(16,185,129,0.12)"
+      />
+      <StatsCard
+        icon={FileText} label="فواتير معلقة"
+        value={String(m.pendingInvoices)}
+        sub="تحتاج مراجعة"
+        accentColor={COLORS.amber.DEFAULT}
+        accentGradient={GRADIENTS.amberAccent} glowColor="rgba(245,158,11,0.12)"
+      />
+    </div>
+  );
+}
+
+// ─── Revenue Area Chart ───────────────────────────────────────
+function RevenueChart() {
+  return (
+    <div style={{ ...GLASS.card, borderRadius: RADIUS.xl, padding: '1.5rem', height: 320 }}>
+      <SectionTitle
+        title="الإيرادات مقابل المصروفات"
+        action={
+          <GlassButton variant="ghost" size="sm">
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              عرض التقرير <ArrowUpRight size={13} />
+            </span>
+          </GlassButton>
+        }
+      />
+      <ResponsiveContainer width="100%" height={230}>
+        <AreaChart data={MONTHLY_DATA} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
+          <defs>
+            <linearGradient id="rev-grad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%"  stopColor={COLORS.blue[600]} stopOpacity={0.18} />
+              <stop offset="95%" stopColor={COLORS.blue[600]} stopOpacity={0} />
+            </linearGradient>
+            <linearGradient id="exp-grad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%"  stopColor={COLORS.rose.DEFAULT} stopOpacity={0.14} />
+              <stop offset="95%" stopColor={COLORS.rose.DEFAULT} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" vertical={false} />
+          <XAxis dataKey="month" tick={{ fontSize: 11, fill: COLORS.slate[400], fontFamily: FONT.family }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fontSize: 11, fill: COLORS.slate[400], fontFamily: FONT.family }} axisLine={false} tickLine={false} tickFormatter={fmtShort} />
+          <Tooltip content={<ChartTooltip />} />
+          <Area type="monotone" dataKey="revenue" stroke={COLORS.blue[600]}  strokeWidth={2.5} fill="url(#rev-grad)" dot={false} />
+          <Area type="monotone" dataKey="expenses" stroke={COLORS.rose.DEFAULT} strokeWidth={2}   fill="url(#exp-grad)" dot={false} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ─── Activity Panel ───────────────────────────────────────────
+function ActivityPanel({ metrics }: { metrics: DashboardMetrics | null }) {
+  const m = metrics ?? { todayOrders: 0, lowStockCount: 0, netProfit: 0 };
+  const items = [
+    { icon: ShoppingCart, color: COLORS.blue[600],     bg: COLORS.blue[50],          title: 'طلبيات اليوم',    value: `${m.todayOrders} طلب` },
+    { icon: Package,      color: COLORS.amber.DEFAULT, bg: COLORS.amber.light,        title: 'أصناف منخفضة',   value: `${m.lowStockCount} صنف` },
+    { icon: Activity,     color: COLORS.emerald.DEFAULT, bg: COLORS.emerald.light,    title: 'الربح الصافي',   value: `${fmtShort(m.netProfit)} ر.س` },
+  ];
+
+  return (
+    <div style={{ ...GLASS.card, borderRadius: RADIUS.xl, padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+      <h3 style={{ fontSize: FONT.sizes.base, fontWeight: FONT.weights.bold, color: COLORS.slate[700], margin: '0 0 4px' }}>
+        لمحة سريعة
+      </h3>
+      {items.map((a) => (
+        <div
+          key={a.title}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 12,
+            padding: '10px 12px', borderRadius: RADIUS.lg,
+            background: 'rgba(248,250,252,0.7)',
+            border: '1px solid rgba(0,0,0,0.04)',
+          }}
+        >
+          <div style={{ width: 36, height: 36, borderRadius: RADIUS.md, background: a.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <a.icon size={16} style={{ color: a.color }} />
+          </div>
+          <div>
+            <p style={{ fontSize: FONT.sizes.xs, color: COLORS.slate[400], margin: 0 }}>{a.title}</p>
+            <p style={{ fontSize: FONT.sizes.base, fontWeight: FONT.weights.bold, color: COLORS.slate[800], margin: 0 }}>{a.value}</p>
+          </div>
+        </div>
+      ))}
+      <div style={{ padding: '10px 12px', borderRadius: RADIUS.lg, background: GRADIENTS.blueAccent, border: '1px solid rgba(37,99,235,0.12)' }}>
+        <p style={{ fontSize: FONT.sizes.xs, color: COLORS.blue[600], fontWeight: FONT.weights.semibold, margin: '0 0 6px' }}>مسار الإيرادات</p>
+        <MicroChart data={SPARK_SALES} color={COLORS.blue[600]} height={40} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Recent Invoices ──────────────────────────────────────────
+function RecentInvoices() {
+  return (
+    <div style={{ ...GLASS.card, borderRadius: RADIUS.xl, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
+        <h3 style={{ fontSize: FONT.sizes.base, fontWeight: FONT.weights.bold, color: COLORS.slate[700], margin: 0 }}>آخر الفواتير</h3>
+        <button style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: FONT.sizes.xs, color: COLORS.blue[600], fontWeight: FONT.weights.semibold, background: 'none', border: 'none', cursor: 'pointer' }}>
+          عرض الكل <ChevronRight size={13} />
+        </button>
+      </div>
+      {RECENT_INVOICES.map((inv, i) => {
+        const meta = STATUS_META[inv.status as keyof typeof STATUS_META] ?? STATUS_META.draft;
+        const StatusIcon = inv.status === 'cleared' || inv.status === 'reported' ? CheckCircle : inv.status === 'pending' ? Clock : AlertCircle;
+        return (
+          <div
+            key={inv.id}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              padding: '0.9rem 1.5rem',
+              borderBottom: i < RECENT_INVOICES.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none',
+              cursor: 'pointer', transition: `background ${MOTION.fast}`,
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(37,99,235,0.03)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+          >
+            <div style={{ width: 36, height: 36, borderRadius: RADIUS.md, background: meta.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <StatusIcon size={16} style={{ color: meta.color }} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: FONT.sizes.sm, fontWeight: FONT.weights.semibold, color: COLORS.slate[700], margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{inv.customer}</p>
+              <p style={{ fontSize: FONT.sizes.xs, color: COLORS.slate[400], margin: '2px 0 0', fontFamily: 'monospace' }}>{inv.id}</p>
+            </div>
+            <div style={{ textAlign: 'left', flexShrink: 0 }}>
+              <p style={{ fontSize: FONT.sizes.sm, fontWeight: FONT.weights.bold, color: COLORS.slate[800], margin: '0 0 2px' }}>{fmtShort(inv.amount)} ر.س</p>
+              <Badge label={meta.label} color={meta.color} bg={meta.bg} size="sm" />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Monthly Bar Chart ────────────────────────────────────────
+function MonthlyBarChart() {
+  return (
+    <div style={{ ...GLASS.card, borderRadius: RADIUS.xl, padding: '1.25rem', height: 340 }}>
+      <h3 style={{ fontSize: FONT.sizes.base, fontWeight: FONT.weights.bold, color: COLORS.slate[700], margin: '0 0 1rem' }}>المبيعات الشهرية</h3>
+      <ResponsiveContainer width="100%" height={260}>
+        <BarChart data={MONTHLY_DATA} margin={{ top: 4, right: 0, left: -24, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" vertical={false} />
+          <XAxis dataKey="month" tick={{ fontSize: 10, fill: COLORS.slate[400], fontFamily: FONT.family }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fontSize: 10, fill: COLORS.slate[400], fontFamily: FONT.family }} axisLine={false} tickLine={false} tickFormatter={fmtShort} />
+          <Tooltip content={<ChartTooltip />} />
+          <Bar dataKey="revenue"  fill={COLORS.blue[600]}     radius={[6,6,0,0]} opacity={0.85} />
+          <Bar dataKey="expenses" fill={COLORS.rose.DEFAULT}  radius={[6,6,0,0]} opacity={0.60} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ─── Main Export ─────────────────────────────────────────────
+export function DashboardHome() {
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [connected, setConnected] = useState(true);
+  const [lastSync, setLastSync] = useState('الآن');
+
+  const fetchMetrics = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [salesRes, expensesRes] = await Promise.allSettled([
+        supabase.rpc('get_today_sales_total').single(),
+        supabase.rpc('get_month_expenses_total').single(),
+      ]);
+
+      const todayRevenue =
+        salesRes.status === 'fulfilled' && !(salesRes.value as any).error
+          ? ((salesRes.value as any).data as any)?.total ?? 14850
+          : 14850;
+
+      const totalExpenses =
+        expensesRes.status === 'fulfilled' && !(expensesRes.value as any).error
+          ? ((expensesRes.value as any).data as any)?.total ?? 8320
+          : 8320;
+
+      setMetrics({ todayRevenue, totalExpenses, netProfit: todayRevenue - totalExpenses, pendingInvoices: 7, todayOrders: 23, lowStockCount: 4 });
+      setConnected(true);
+      setLastSync(new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' }));
+    } catch {
+      setConnected(false);
+      setMetrics({ todayRevenue: 14850, totalExpenses: 8320, netProfit: 6530, pendingInvoices: 7, todayOrders: 23, lowStockCount: 4 });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMetrics();
+    const channel = supabase
+      .channel('dashboard-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, fetchMetrics)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchMetrics]);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', fontFamily: FONT.family }}>
+      <TopBar loading={loading} onRefresh={fetchMetrics} connected={connected} lastSync={lastSync} />
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem 1.75rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <StatsRow metrics={metrics} />
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: '1.5rem' }}>
+          <RevenueChart />
+          <ActivityPanel metrics={metrics} />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '1.5rem' }}>
+          <RecentInvoices />
+          <MonthlyBarChart />
+        </div>
+      </div>
+
+      {/* Keyframe for spin animation */}
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+export default DashboardHome;

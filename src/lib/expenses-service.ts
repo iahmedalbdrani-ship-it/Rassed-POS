@@ -4,6 +4,7 @@
 // ============================================================
 
 import { supabase } from './supabase';
+import { postSimpleEntry, roundMoney } from './double-entry';
 
 // ─── Types ──────────────────────────────────────────────────
 export interface Account {
@@ -24,6 +25,7 @@ export interface AccountBalance extends Account {
 }
 
 export interface ExpenseInput {
+  org_id: string;            // مُلزِم — يُمرَّر من TenantContext
   description: string;       // اسم/بيان المصروف (مثال: فاتورة كهرباء أبريل)
   amount: number;            // المبلغ بالريال
   entry_date: string;        // تاريخ بصيغة YYYY-MM-DD
@@ -48,41 +50,66 @@ export interface ExpenseRow {
 // ── ACCOUNTS (شجرة الحسابات) ─────────────────────────────────
 // ═══════════════════════════════════════════════════════════
 export const accountsService = {
-  /** جميع الحسابات القابلة للنشاط (غير رؤوس) */
-  async listActive(): Promise<Account[]> {
+  /** جميع الحسابات القابلة للنشاط مُصفَّاة بالمؤسسة */
+  async listActive(orgId: string): Promise<Account[]> {
+    if (!orgId?.trim()) throw new Error('[AccountsService] org_id مطلوب');
     const { data, error } = await supabase
       .from('accounts')
       .select('id, code, name_ar, name_en, type, nature, is_header, level')
+      .eq('org_id', orgId)
       .eq('is_active', true)
       .order('code', { ascending: true });
     if (error) throw new Error(`accounts.listActive: ${error.message}`);
     return (data ?? []) as Account[];
   },
 
-  /** حسابات المصروفات فقط (للقائمة المنسدلة) */
-  async listExpenseAccounts(): Promise<Account[]> {
-    const all = await this.listActive();
-    return all.filter(a => a.type === 'EXPENSE' && !a.is_header);
+  /** حسابات المصروفات فقط (للقائمة المنسدلة) — مع Fallback */
+  async listExpenseAccounts(orgId: string): Promise<Account[]> {
+    const all = await this.listActive(orgId);
+
+    // المحاولة الأولى: حسابات المصروفات القابلة للترحيل (غير رأسية)
+    const nonHeader = all.filter(a => a.type === 'EXPENSE' && !a.is_header);
+    if (nonHeader.length > 0) return nonHeader;
+
+    // Fallback: كل حسابات المصروفات (بما فيها الرأسية كخيار أخير)
+    return all.filter(a => a.type === 'EXPENSE');
   },
 
-  /** حسابات الصندوق/البنك (كمصدر دفع) — كل الأصول المتداولة النقدية غير الرأسية */
-  async listCashBankAccounts(): Promise<Account[]> {
-    const all = await this.listActive();
-    return all.filter(
+  /** حسابات الصندوق/البنك (كمصدر دفع) — مرن: يبدأ بالأكواد المعيارية ثم يتوسع */
+  async listCashBankAccounts(orgId: string): Promise<Account[]> {
+    const all = await this.listActive(orgId);
+
+    // المحاولة الأولى: الأكواد المحاسبية المعيارية السعودية
+    const strict = all.filter(
       a =>
         !a.is_header &&
         a.type === 'ASSET' &&
         a.nature === 'DEBIT' &&
         (
-          a.code.startsWith('111') ||   // نقدية وصناديق
-          a.code.startsWith('112') ||   // حسابات بنكية
-          a.code.startsWith('113')      // بنوك احتياطية
+          a.code.startsWith('111') ||  // نقدية وصناديق
+          a.code.startsWith('112') ||  // حسابات بنكية
+          a.code.startsWith('113') ||  // بنوك احتياطية
+          a.code.startsWith('1100') || // صندوق نقدي (بديل)
+          a.code.startsWith('1110') || // نقدية بديلة
+          a.code.startsWith('1200') || // بنك بديل
+          a.code.startsWith('110') ||  // نقدية قصيرة
+          a.code.startsWith('120')     // بنوك قصيرة
         )
     );
+    if (strict.length > 0) return strict;
+
+    // Fallback: كل حسابات الأصول المدينة غير الرأسية
+    const fallback = all.filter(
+      a => !a.is_header && a.type === 'ASSET' && a.nature === 'DEBIT'
+    );
+    if (fallback.length > 0) return fallback;
+
+    // آخر fallback: كل حسابات الأصول غير الرأسية
+    return all.filter(a => !a.is_header && a.type === 'ASSET');
   },
 
   /** رصيد محدّث لحساب واحد عبر الـ VIEW: account_balances */
-  async getBalance(accountId: string): Promise<number> {
+  async getBalance(accountId: string, _orgId?: string): Promise<number> {
     const { data, error } = await supabase
       .from('account_balances')
       .select('balance')
@@ -103,68 +130,36 @@ export const expensesService = {
    *  - دائن (Credit): حساب الصندوق/البنك
    */
   async create(input: ExpenseInput) {
-    // تحققات أولية
-    if (!input.description?.trim()) throw new Error('يرجى إدخال بيان المصروف');
+    if (!input.org_id?.trim()) throw new Error('يرجى تحميل بيانات المؤسسة أولاً');
     if (!Number.isFinite(input.amount) || input.amount <= 0) {
       throw new Error('المبلغ يجب أن يكون رقماً موجباً');
     }
-    if (!input.entry_date) throw new Error('يرجى إدخال تاريخ العملية');
-    if (!input.source_account_id) throw new Error('يرجى اختيار حساب المصدر');
-    if (!input.expense_account_id) throw new Error('يرجى اختيار حساب المصروف');
-    if (input.source_account_id === input.expense_account_id) {
-      throw new Error('لا يمكن أن يكون حساب المصدر وحساب المصروف متطابقين');
+
+    // التحقق من الرصيد الكافي قبل الترحيل
+    const balance = await accountsService.getBalance(input.source_account_id);
+    const needed  = roundMoney(input.amount);
+    if (balance < needed) {
+      throw new Error(
+        `رصيد الحساب غير كافٍ — المتاح: ${balance.toFixed(2)} ر.س، المطلوب: ${needed.toFixed(2)} ر.س`
+      );
     }
 
-    const amount = +Number(input.amount).toFixed(2);
-
-    // 1) إنشاء رأس القيد
-    const { data: entry, error: entryErr } = await supabase
-      .from('journal_entries')
-      .insert({
-        entry_date: input.entry_date,
-        description: input.description.trim(),
-        reference_type: 'MANUAL',
-        reference_no: input.reference ?? null,
-        is_posted: true,
-      })
-      .select()
-      .single();
-
-    if (entryErr) throw new Error(`expenses.createEntry: ${entryErr.message}`);
-
-    // 2) إنشاء بنود القيد (مدين/دائن)
-    const lines = [
-      {
-        entry_id: entry.id,
-        account_id: input.expense_account_id,
-        description: input.description.trim(),
-        debit: amount,
-        credit: 0,
-      },
-      {
-        entry_id: entry.id,
-        account_id: input.source_account_id,
-        description: input.description.trim(),
-        debit: 0,
-        credit: amount,
-      },
-    ];
-
-    const { error: linesErr } = await supabase
-      .from('journal_entry_lines')
-      .insert(lines);
-
-    if (linesErr) {
-      // تراجع يدوي في حال فشل بنود القيد
-      await supabase.from('journal_entries').delete().eq('id', entry.id);
-      throw new Error(`expenses.createLines: ${linesErr.message}`);
-    }
-
-    return entry;
+    // الترحيل عبر محرك القيد المزدوج
+    return postSimpleEntry({
+      org_id:            input.org_id,
+      entry_date:        input.entry_date,
+      description:       input.description,
+      reference_type:    'EXPENSE',
+      reference_no:      input.reference,
+      debit_account_id:  input.expense_account_id,  // مدين: المصروف
+      credit_account_id: input.source_account_id,   // دائن: الصندوق/البنك
+      amount:            input.amount,
+    });
   },
 
-  /** قائمة آخر المصروفات (manual/adjustment) */
-  async listRecent(limit = 20): Promise<ExpenseRow[]> {
+  /** قائمة آخر المصروفات (manual/adjustment) مُصفَّاة بالمؤسسة */
+  async listRecent(orgId: string, limit = 20): Promise<ExpenseRow[]> {
+    if (!orgId?.trim()) throw new Error('[ExpensesService] org_id مطلوب');
     const { data, error } = await supabase
       .from('journal_entries')
       .select(`
@@ -174,6 +169,7 @@ export const expensesService = {
           accounts ( code, name_ar, type )
         )
       `)
+      .eq('org_id', orgId)
       .in('reference_type', ['MANUAL', 'ADJUSTMENT'])
       .order('entry_date', { ascending: false })
       .order('created_at', { ascending: false })
